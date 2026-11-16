@@ -24,7 +24,7 @@ Item catalogue, hero abilities, official names and descriptions (French and Engl
 | [React](https://react.dev) | MIT | Interface |
 | [Tesseract.js](https://github.com/naptha/tesseract.js), tesseract.js-core | Apache 2.0 | Reads the souls counter |
 | Tesseract `eng` model (`@tesseract.js-data/eng`) | Apache 2.0 | Bundled OCR model |
-| [electron-updater](https://www.electron.build/auto-update) | MIT | Updates of the installed version |
+| [electron-updater](https://www.electron.build/auto-update) | MIT | Updates of the AppImage |
 | [Lucide](https://lucide.dev) | ISC | Interface icons |
 | [Tailwind CSS](https://tailwindcss.com) | MIT | Styles |
 | [Inter](https://rsms.me/inter/) (`src/assets/fonts/Inter-*.woff2`) | SIL Open Font License 1.1 | Body text font |

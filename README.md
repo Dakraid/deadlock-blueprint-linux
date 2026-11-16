@@ -7,7 +7,7 @@
 **Your real-time build coach for Deadlock.**
 It watches your screen, recognizes your match and tells you what to buy, right now.
 
-![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows&logoColor=white)
+![Linux Wayland](https://img.shields.io/badge/Linux-Wayland%20(KDE%20Plasma%206)-1793D1?logo=linux&logoColor=white)
 ![Licence MIT](https://img.shields.io/badge/licence-MIT-green)
 [![CI](https://github.com/PedroGomesFR/deadlock-blueprint/actions/workflows/ci.yml/badge.svg)](https://github.com/PedroGomesFR/deadlock-blueprint/actions/workflows/ci.yml)
 
@@ -29,8 +29,6 @@ It watches your screen, recognizes your match and tells you what to buy, right n
     <td align="center"><sub>Overlay on top of the game</sub></td>
   </tr>
 </table>
-
-## For now HDR is not supported! so to use the app please turn it off or else the app won't be able to correctly read your screen.
 
 ## ✨ Features
 
@@ -56,8 +54,11 @@ Every 350 ms the app reads the image of the Deadlock window and recognizes:
 - **Readable at a glance**: big item icons, the shop tab as its colour and icon, and a button that **copies the item name** to paste into the shop search (clipboard only, nothing is typed into the game).
 
 ### 🎯 In-game overlay
-A transparent panel, always on top, shows your ability order and your next 3 purchases. In **ghost mode** clicks go through it, so it never gets in the way of your aim.
-Clicking it (copy an item name) never takes the focus from the game, so the game sound keeps playing. To **arrange** it, press its ⚙ button or <kbd>Alt</kbd> + <kbd>K</kbd>: drag its header to move it, its ↙ corner to resize it, and set its **opacity** (so it hides less of the minimap) and its **size** (100 / 85 / 70 %). Meanwhile the overlay has the focus, like any window: click the game (or press <kbd>Alt</kbd> + <kbd>K</kbd> again) to go back. The buttons are hidden in ghost mode, since clicks go through to the game: <kbd>Alt</kbd> + <kbd>L</kbd> brings them back.
+A transparent panel shows your ability order and your next 3 purchases. In **ghost mode** clicks go through it, so it never gets in the way of your aim.
+To **arrange** it, press its ⚙ button or <kbd>Alt</kbd> + <kbd>K</kbd>: drag its header to move it, its ↘ corner to resize it, and set its **opacity** (so it hides less of the minimap) and its **size** (100 / 85 / 70 %). The buttons are hidden in ghost mode, since clicks go through to the game: <kbd>Alt</kbd> + <kbd>L</kbd> brings them back.
+
+> [!IMPORTANT]
+> Wayland does not let an app keep its own window above a fullscreen game or refuse the focus. On **KDE Plasma**, run `linux/install-kwin-rule.sh` once (or import `linux/deadlock-blueprint.kwinrule` in System Settings › Window Management › Window Rules): the overlay then stays above Deadlock, clicking it never takes the focus from the game, and KWin remembers where you put it. Other desktops: best effort, without these guarantees.
 
 ### 🌍 English, French, Italian
 The interface and the hero guides are in English, French and Italian. Item and ability names, descriptions and stats come from the game's official texts in each language.
@@ -68,19 +69,25 @@ Download from the [**latest release**](https://github.com/PedroGomesFR/deadlock-
 
 | File | |
 | :--- | :--- |
-| `Deadlock-Blueprint-<version>.exe` | Portable: one file, no install. Tells you when a new version is out. |
+| `Deadlock-Blueprint-<version>.AppImage` | Linux x64, one file, no install. Updates itself. |
+
+```bash
+chmod +x Deadlock-Blueprint-<version>.AppImage
+./Deadlock-Blueprint-<version>.AppImage
+```
+
+**Requirements:** a **Wayland** session with `xdg-desktop-portal` and PipeWire (KDE Plasma 6 tested; GNOME best effort). Deadlock itself runs through **Proton**, fullscreen or borderless. On first start the app writes its desktop entry (`~/.local/share/applications/com.vandicta.deadlock-blueprint.desktop`): the desktop portals identify apps by it.
 
 > [!NOTE]
-> The executable is not code-signed (a certificate costs several hundred euros a year). On first launch Windows SmartScreen may say "Windows protected your PC": click **More info**, then **Run anyway**.
-> Each release is **built by GitHub Actions from the public source code** and lists the **SHA-256** of the file with a **VirusTotal** link. To check your download: `Get-FileHash .\Deadlock-Blueprint-<version>.exe` in PowerShell.
+> Each release is **built by GitHub Actions from the public source code** and lists the **SHA-256** of the file. To check your download: `sha256sum Deadlock-Blueprint-<version>.AppImage`.
 
 ## Can I get banned?
 
 **The app works like OBS or Discord screen sharing: it only reads the image that is already on your screen.**
 
 - It does **not read or write the game's memory**, does **not inject** anything into the game, does **not modify** any game file and does **not send any input** (no keystrokes, no mouse).
-- The capture uses the standard Windows screen-capture API (the same one browsers use to share a window).
-- The overlay is an ordinary always-on-top window, like the Discord or Steam overlay, and does not draw inside the game.
+- The capture goes through the desktop's screen-sharing portal (the same one browsers use to share a window): you choose the Deadlock window yourself in the system dialog, once per launch.
+- The overlay is an ordinary window kept above the game by a KWin window rule, like the Discord or Steam overlay, and does not draw inside the game.
 
 Anti-cheat systems go after programs that read or modify a game's memory or automate input; Deadlock Blueprint does neither and never touches the game process. That said, it is a third-party tool that Valve has not approved, and nobody but Valve can promise anything: use it at your own discretion.
 
@@ -90,11 +97,11 @@ Anti-cheat systems go after programs that read or modify a game's memory or auto
   - the weekly builds and items, read from this GitHub repository (`raw.githubusercontent.com`);
   - the update check (GitHub releases);
   - the interface fonts (Google Fonts).
-- **Game logs are off by default.** If you turn them on (first launch, or Settings), the app keeps a log of your last 5 matches **on your PC only** (text plus HUD captures of the inventory and top bar, ~30 MB per match), to help fix detection problems. They are stored in `%APPDATA%\deadlock-tactical-autobuild\match-logs` and can be deleted from Settings. They only leave your PC if you attach them to a report yourself.
+- **Game logs are off by default.** If you turn them on (first launch, or Settings), the app keeps a log of your last 5 matches **on your PC only** (text plus HUD captures of the inventory and top bar, ~30 MB per match), to help fix detection problems. They are stored in `~/.config/deadlock-tactical-autobuild/match-logs` and can be deleted from Settings. They only leave your PC if you attach them to a report yourself.
 
 ## 🎮 Usage
 
-1. Start **Deadlock Blueprint**, then Deadlock (in any order).
+1. Start **Deadlock Blueprint**, then Deadlock (in any order). In the system's sharing dialog, choose the **Deadlock window** (or the screen it runs on). If you cancel or close the game, the app shows a **Choose the Deadlock window** button to pick it again.
 2. Join a match: hero, lane, enemies and inventory fill in on their own within 1–2 seconds.
 3. Buy the **#1**: it leaves the list as soon as it appears in your inventory.
 
@@ -104,7 +111,7 @@ Anti-cheat systems go after programs that read or modify a game's memory or auto
 | :--- | :--- |
 | ✅ **16:9**: 1920×1080, 2560×1440, 3840×2160… | Calibrated on 1920×1080; other 16:9 resolutions are scaled to it. |
 | ✅ Fullscreen or borderless windowed | |
-| ⚠️ Windows HDR | Not supported yet: with HDR on, the capture's colours are wrong and nothing is detected. Turn HDR off while playing (Settings › Display › Use HDR). |
+| ✅ HDR desktop (KDE Plasma 6) | Measured on Plasma 6.8 with HDR on: the portal capture comes back in SDR, like on an SDR screen. The app undoes KWin's screencast curve (lifted dark tones) before reading the HUD. Deadlock rendering in HDR itself (`PROTON_ENABLE_HDR`) is not measured. |
 | 🧪 16:10, ultrawide (21:9, 32:9), 4:3, windowed with borders, a 16:10 or 4:3 game on a 16:9 screen (stretched or black bars) | Experimental: the HUD is mapped onto the 16:9 layout, not yet checked on real captures of these formats. If detection fails, [report a problem](#-report-a-problem) with a game log. |
 | ⛔ Vertical screen, tiny window | The app says so and **pauses detection** instead of showing wrong recommendations. |
 | ⚠️ A changed HUD scale, colour filters | The HUD is not where the scanner looks: the app shows a hint when it finds no HUD for a few minutes. |
@@ -167,7 +174,7 @@ About 650 MB in total, stable over time, of which about 400 MB is the video capt
 
 ## 🛠️ Development
 
-**Requirements:** [Node.js](https://nodejs.org) 20 or later, Windows.
+**Requirements:** [Node.js](https://nodejs.org) 20 or later, Linux with a Wayland session.
 
 ```bash
 git clone https://github.com/PedroGomesFR/deadlock-blueprint.git
@@ -181,7 +188,7 @@ npm run dev
 | `npm run dev` | Interface with hot reload (Vite) + Electron |
 | `npm test` | Rules, recorded games replayed through them, translations |
 | `npm run test:vision` | The real scanner on saved game frames (Electron) |
-| `npm run dist` | Portable exe in `release/` |
+| `npm run dist` | AppImage in `release/` |
 | `npm run update-builds` | New meta builds and item catalogue from deadlock-api.com (done every week by GitHub Actions) |
 
 See [**docs/CONTRIBUTING.md**](docs/CONTRIBUTING.md) to recalibrate the scanner, add a hero, translate, or publish a release. The HUD coordinates and calibration notes are in [`AGENTS.md`](AGENTS.md).

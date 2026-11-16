@@ -4,20 +4,26 @@ Thanks for helping! This guide covers the setup, the tests, and the four jobs th
 
 ## Setup
 
-Windows and [Node.js](https://nodejs.org) 20+.
+Linux with a Wayland session (KDE Plasma 6 tested), `xdg-desktop-portal` + PipeWire, and [Node.js](https://nodejs.org) 20+.
 
 ```bash
 npm install
 npm run dev          # Vite with hot reload + Electron
 ```
 
-> Running Electron from a VS Code terminal? VS Code sets `ELECTRON_RUN_AS_NODE`, and Electron then starts as plain Node (`Cannot find module 'electron'`). Run `$env:ELECTRON_RUN_AS_NODE=$null` (PowerShell) or `unset ELECTRON_RUN_AS_NODE` (bash) first.
+> Running Electron from a VS Code terminal? VS Code sets `ELECTRON_RUN_AS_NODE`, and Electron then starts as plain Node (`Cannot find module 'electron'`). Run `unset ELECTRON_RUN_AS_NODE` first.
+
+> Recent npm versions block install scripts: if `node_modules/electron/dist` is empty after `npm install`, run `node node_modules/electron/install.js`.
+
+> `npm run test:vision` needs a display; on a headless machine (CI): `xvfb-run -a npx electron scripts/vision-replay.cjs --check tests/vision`.
 
 ## Where things are
 
 | Path | |
 | :--- | :--- |
-| `electron/main.cjs` | Windows, overlay, shortcuts, capture source, updates, problem reports, game log files |
+| `electron/main.cjs` | App windows, overlay, shortcuts (GlobalShortcuts portal), capture source (ScreenCast portal), desktop entry, updates, problem reports, game log files |
+| `src/services/screenCapture.ts` | One portal stream on the window the player picked, KWin's screencast curve undone on KDE |
+| `linux/` | KWin window rule of the overlay and its installer |
 | `src/services/visionScanner.ts` | The scanner: one frame → what is on screen (portraits, inventory, souls) |
 | `src/services/matchTracker.ts` | The rules: scans over time → my hero, lineups (voted per slot), owned items, new match |
 | `src/services/recommendations.ts` | What to buy next, what to sell |
@@ -45,7 +51,7 @@ npm run typecheck
 
 ### Adding a recorded game to the replay tests
 
-1. Turn on game logs (Settings), play, and find the folder: Diagnostics › Game logs (`%APPDATA%\deadlock-tactical-autobuild\match-logs\partie_…`).
+1. Turn on game logs (Settings), play, and find the folder: Diagnostics › Game logs (`~/.config/deadlock-tactical-autobuild/match-logs/partie_…`).
 2. Gzip its `journal.log` into `tests/replays/<name>.journal.log.gz`.
 3. Add `{ file: '<name>', finalOwned: <items in your final inventory> }` to the `games` list of `matchTracker.test.ts`.
 
@@ -107,10 +113,7 @@ When Valve releases a hero, `npm run update-builds` lists it under *"Heroes abse
 
 1. Update `version` in `package.json` and add a `## [x.y.z] — date` section at the top of `CHANGELOG.md` (it becomes the release notes).
 2. Commit, then tag and push: `git tag vX.Y.Z && git push origin main vX.Y.Z`.
-3. `.github/workflows/release.yml` checks that the tag matches `package.json`, runs the tests, builds the installer and the portable exe, computes their SHA-256 and publishes the release (with `latest.yml`, which the installed apps read to update themselves).
-4. **VirusTotal** (optional): create a free account on virustotal.com, copy the API key into a repository secret named `VT_API_KEY`, and both executables are uploaded for scanning at each release. Without it, the release notes still link to their VirusTotal pages, and anyone can upload the file there.
-
-The executables are not code-signed, hence the SmartScreen warning on first launch. A code-signing certificate (or [SignPath Foundation](https://signpath.org), free for open-source projects) would remove it: electron-builder signs with `CSC_LINK` / `CSC_KEY_PASSWORD`.
+3. `.github/workflows/release.yml` checks that the tag matches `package.json`, runs the tests, builds the AppImage, computes its SHA-256 and publishes the release (with `latest-linux.yml`, which the AppImage reads to update itself).
 
 ## README screenshots
 

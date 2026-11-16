@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased] — Linux Wayland
+
+### Changed
+- **Linux Wayland only** (KDE Plasma 6 tested, Deadlock through Proton). Windows is no longer supported: no `.exe`, no Windows capture or overlay code.
+- **Capture through the desktop's screen-sharing portal**: you choose the Deadlock window once per launch in the system dialog. If you cancel or close the game, a **Choose the Deadlock window** button picks it again.
+- **Overlay on KDE**: a KWin window rule (`linux/install-kwin-rule.sh`) keeps it above the fullscreen game, never takes the focus from it, and remembers its position. Resize it from its ↘ corner.
+- **AppImage** instead of the portable exe; it updates itself.
+- Electron 45: global shortcuts through the desktop portal.
+
+### Fixed
+- **HDR desktops work**: measured on Plasma 6.8, an HDR screen captures like an SDR one. KWin's capture lifts dark tones, and that broke 5 of the 33 scanner test frames (Haze read as Paradox). The app now undoes it before reading the HUD. A game rendering in HDR itself is not measured.
+- The match clock was misread with Electron 45 (7:09 read as 7:00): it is now enlarged for the OCR by the app itself, the same with any Electron version.
+
 ## [2.1.4] — 2026-11-06
 
 ### Fixed

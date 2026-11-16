@@ -7,7 +7,7 @@
 **Ton coach de build en temps réel pour Deadlock.**
 Il lit ton écran, reconnaît ta partie et te dit quoi acheter, maintenant.
 
-![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows&logoColor=white)
+![Linux Wayland](https://img.shields.io/badge/Linux-Wayland%20(KDE%20Plasma%206)-1793D1?logo=linux&logoColor=white)
 ![Licence MIT](https://img.shields.io/badge/licence-MIT-green)
 [![CI](https://github.com/PedroGomesFR/deadlock-blueprint/actions/workflows/ci.yml/badge.svg)](https://github.com/PedroGomesFR/deadlock-blueprint/actions/workflows/ci.yml)
 
@@ -52,8 +52,11 @@ Toutes les 350 ms, l'application lit l'image de la fenêtre Deadlock et reconna�
 - **Lisible d'un coup d'œil** : grandes icônes d'objets, l'onglet de la boutique par sa couleur et son icône, et un bouton qui **copie le nom de l'objet** pour le coller dans la recherche de la boutique (presse-papiers uniquement, rien n'est tapé dans le jeu).
 
 ### 🎯 Overlay en jeu
-Un panneau transparent, toujours au premier plan, affiche ton ordre de sorts et tes 3 prochains achats. En **mode fantôme**, les clics le traversent et il ne gêne jamais ta visée.
-Cliquer dessus (copier un nom d'objet) ne prend jamais le focus au jeu : le son du jeu continue. Pour le **disposer**, appuie sur son bouton ⚙ ou sur <kbd>Alt</kbd> + <kbd>K</kbd> : fais glisser son en-tête pour le déplacer, son coin ↙ pour le redimensionner, et règle son **opacité** (pour moins cacher la minicarte) et sa **taille** (100 / 85 / 70 %). Pendant ce temps l'overlay a le focus, comme n'importe quelle fenêtre : clique sur le jeu (ou rappuie sur <kbd>Alt</kbd> + <kbd>K</kbd>) pour y revenir. Les boutons sont masqués en mode fantôme, puisque les clics vont au jeu : <kbd>Alt</kbd> + <kbd>L</kbd> les fait revenir.
+Un panneau transparent affiche ton ordre de sorts et tes 3 prochains achats. En **mode fantôme**, les clics le traversent et il ne gêne jamais ta visée.
+Pour le **disposer**, appuie sur son bouton ⚙ ou sur <kbd>Alt</kbd> + <kbd>K</kbd> : fais glisser son en-tête pour le déplacer, son coin ↘ pour le redimensionner, et règle son **opacité** (pour moins cacher la minicarte) et sa **taille** (100 / 85 / 70 %). Les boutons sont masqués en mode fantôme, puisque les clics vont au jeu : <kbd>Alt</kbd> + <kbd>L</kbd> les fait revenir.
+
+> [!IMPORTANT]
+> Wayland ne laisse pas une application garder sa fenêtre au-dessus d'un jeu plein écran ni refuser le focus. Sous **KDE Plasma**, lance une fois `linux/install-kwin-rule.sh` (ou importe `linux/deadlock-blueprint.kwinrule` dans Configuration du système › Gestion des fenêtres › Règles de fenêtres) : l'overlay reste alors au-dessus de Deadlock, cliquer dessus ne prend jamais le focus au jeu, et KWin retient sa position. Autres bureaux : au mieux, sans ces garanties.
 
 ### 🌍 Français, anglais, italien
 L'interface et les guides des héros sont en français, en anglais et en italien. Les noms, descriptions et stats des objets et des sorts viennent des textes officiels du jeu dans chaque langue.
@@ -64,19 +67,25 @@ L'interface et les guides des héros sont en français, en anglais et en italien
 
 | Fichier | |
 | :--- | :--- |
-| `Deadlock-Blueprint-<version>.exe` | Portable : un seul fichier, sans installation. Te prévient quand une nouvelle version sort. |
+| `Deadlock-Blueprint-<version>.AppImage` | Linux x64, un seul fichier, sans installation. Se met à jour tout seul. |
+
+```bash
+chmod +x Deadlock-Blueprint-<version>.AppImage
+./Deadlock-Blueprint-<version>.AppImage
+```
+
+**Prérequis :** une session **Wayland** avec `xdg-desktop-portal` et PipeWire (testé sous KDE Plasma 6 ; GNOME au mieux). Deadlock tourne avec **Proton**, en plein écran ou fenêtré sans bordure. Au premier lancement, l'application écrit son entrée de bureau (`~/.local/share/applications/com.vandicta.deadlock-blueprint.desktop`) : les portails du bureau identifient les applications par elle.
 
 > [!NOTE]
-> L'exécutable n'est pas signé (un certificat coûte plusieurs centaines d'euros par an). Au premier lancement, Windows SmartScreen peut afficher « Windows a protégé votre ordinateur » : clique sur **Informations complémentaires**, puis sur **Exécuter quand même**.
-> Chaque version est **compilée par GitHub Actions à partir du code source public** et liste le **SHA-256** du fichier avec un lien **VirusTotal**. Pour vérifier ton téléchargement : `Get-FileHash .\Deadlock-Blueprint-<version>.exe` dans PowerShell.
+> Chaque version est **compilée par GitHub Actions à partir du code source public** et liste le **SHA-256** du fichier. Pour vérifier ton téléchargement : `sha256sum Deadlock-Blueprint-<version>.AppImage`.
 
 ## Peut-on être banni ?
 
 **L'application fonctionne comme OBS ou le partage d'écran de Discord : elle lit seulement l'image déjà affichée sur ton écran.**
 
 - Elle **ne lit pas et n'écrit pas la mémoire du jeu**, n'**injecte** rien dans le jeu, ne **modifie** aucun fichier du jeu et n'**envoie aucune commande** (ni touche, ni souris).
-- La capture passe par l'API standard de capture d'écran de Windows (celle qu'utilisent les navigateurs pour partager une fenêtre).
-- L'overlay est une simple fenêtre au premier plan, comme l'overlay Discord ou Steam : il ne dessine pas dans le jeu.
+- La capture passe par le portail de partage d'écran du bureau (celui qu'utilisent les navigateurs pour partager une fenêtre) : tu choisis toi-même la fenêtre Deadlock dans la fenêtre du système, une fois par lancement.
+- L'overlay est une simple fenêtre gardée au-dessus du jeu par une règle de fenêtre KWin, comme l'overlay Discord ou Steam : il ne dessine pas dans le jeu.
 
 Les anti-triche visent les programmes qui lisent ou modifient la mémoire d'un jeu, ou qui automatisent des actions : Deadlock Blueprint ne fait ni l'un ni l'autre et ne touche jamais au processus du jeu. Cela reste un outil tiers non approuvé par Valve, et personne d'autre que Valve ne peut rien garantir : à utiliser en connaissance de cause.
 
@@ -86,11 +95,11 @@ Les anti-triche visent les programmes qui lisent ou modifient la mémoire d'un j
   - les builds et objets de la semaine, lus dans ce dépôt GitHub (`raw.githubusercontent.com`) ;
   - la recherche de mises à jour (versions GitHub) ;
   - les polices de l'interface (Google Fonts).
-- **Les journaux de parties sont désactivés par défaut.** Si tu les actives (au premier lancement ou dans les Réglages), l'application garde un journal de tes 5 dernières parties **sur ton PC uniquement** (texte + captures du HUD : inventaire et barre du haut, ~30 Mo par partie), pour aider à corriger la détection. Ils sont rangés dans `%APPDATA%\deadlock-tactical-autobuild\match-logs` et se suppriment depuis les Réglages. Ils ne quittent ton PC que si tu les joins toi-même à un signalement.
+- **Les journaux de parties sont désactivés par défaut.** Si tu les actives (au premier lancement ou dans les Réglages), l'application garde un journal de tes 5 dernières parties **sur ton PC uniquement** (texte + captures du HUD : inventaire et barre du haut, ~30 Mo par partie), pour aider à corriger la détection. Ils sont rangés dans `~/.config/deadlock-tactical-autobuild/match-logs` et se suppriment depuis les Réglages. Ils ne quittent ton PC que si tu les joins toi-même à un signalement.
 
 ## 🎮 Utilisation
 
-1. Lance **Deadlock Blueprint**, puis Deadlock (l'ordre n'a pas d'importance).
+1. Lance **Deadlock Blueprint**, puis Deadlock (l'ordre n'a pas d'importance). Dans la fenêtre de partage du système, choisis la **fenêtre Deadlock** (ou l'écran où il tourne). Si tu annules ou fermes le jeu, l'application affiche un bouton **Choisir la fenêtre Deadlock** pour la reprendre.
 2. Entre en partie : le héros, la lane, les ennemis et l'inventaire se remplissent tout seuls en 1 à 2 secondes.
 3. Achète le **#1** affiché : il disparaît de la liste dès qu'il apparaît dans ton inventaire.
 
@@ -100,7 +109,7 @@ Les anti-triche visent les programmes qui lisent ou modifient la mémoire d'un j
 | :--- | :--- |
 | ✅ **16:9** : 1920×1080, 2560×1440, 3840×2160… | Calibré sur 1920×1080, les autres résolutions 16:9 y sont ramenées. |
 | ✅ Plein écran ou fenêtré sans bordure | |
-| ⚠️ HDR Windows | Pas encore pris en charge : avec le HDR activé, les couleurs de la capture sont fausses et rien n'est détecté. Désactive le HDR pour jouer (Paramètres › Affichage › Utiliser le HDR). |
+| ✅ Bureau en HDR (KDE Plasma 6) | Mesuré sous Plasma 6.8 avec le HDR activé : la capture du portail revient en SDR, comme sur un écran SDR. L'application annule la courbe de capture de KWin (tons sombres relevés) avant de lire le HUD. Deadlock lui-même rendu en HDR (`PROTON_ENABLE_HDR`) n'est pas mesuré. |
 | 🧪 16:10, ultra-large (21:9, 32:9), 4:3, fenêtré avec bordures, jeu en 16:10 ou 4:3 sur un écran 16:9 (étiré ou bandes noires) | Expérimental : le HUD est ramené à la disposition 16:9, pas encore vérifié sur de vraies captures de ces formats. Si la détection échoue, [signale un problème](#-signaler-un-problème) avec un journal de partie. |
 | ⛔ Écran vertical, toute petite fenêtre | L'application le signale et **met la détection en pause** au lieu d'afficher de mauvaises recommandations. |
 | ⚠️ Échelle du HUD modifiée, filtres de couleur | Le HUD n'est pas là où le scanner le cherche : l'application l'indique si elle ne trouve aucun HUD pendant plusieurs minutes. |
@@ -163,7 +172,7 @@ Environ 650 Mo au total, stable dans le temps, dont environ 400 Mo pour le pipel
 
 ## 🛠️ Développement
 
-**Prérequis :** [Node.js](https://nodejs.org) 20 ou plus, Windows.
+**Prérequis :** [Node.js](https://nodejs.org) 20 ou plus, Linux avec une session Wayland.
 
 ```bash
 git clone https://github.com/PedroGomesFR/deadlock-blueprint.git
@@ -177,7 +186,7 @@ npm run dev
 | `npm run dev` | Interface avec rechargement à chaud (Vite) + Electron |
 | `npm test` | Règles, parties enregistrées rejouées, traductions |
 | `npm run test:vision` | Le vrai scanner sur des images de parties enregistrées (Electron) |
-| `npm run dist` | Exécutable portable dans `release/` |
+| `npm run dist` | AppImage dans `release/` |
 | `npm run update-builds` | Builds méta et catalogue d'objets depuis deadlock-api.com (fait chaque semaine par GitHub Actions) |
 
 Voir [**docs/CONTRIBUTING.md**](docs/CONTRIBUTING.md) (en anglais) pour recalibrer le scanner, ajouter un héros, traduire ou publier une version. Les coordonnées du HUD et les choix de calibration sont dans [`AGENTS.md`](AGENTS.md).
