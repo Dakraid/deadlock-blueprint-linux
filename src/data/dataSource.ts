@@ -16,6 +16,7 @@ import bundledMeta from './generated/metaBuilds.json';
 export const DATA_SCHEMA_VERSION = 2;
 
 // The branch explicitly: the repository also had a tag named "main" (release 1.2.0), and "main" alone is ambiguous
+// The upstream repository's weekly data (same for every platform), not this Linux fork's
 export const REPO_RAW_BASE = 'https://raw.githubusercontent.com/PedroGomesFR/deadlock-blueprint/refs/heads/main';
 const CACHE_KEY = 'dl_remoteData';
 const REFRESH_AFTER_MS = 6 * 3600 * 1000;

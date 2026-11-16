@@ -9,9 +9,9 @@ It watches your screen, recognizes your match and tells you what to buy, right n
 
 ![Linux Wayland](https://img.shields.io/badge/Linux-Wayland%20(KDE%20Plasma%206)-1793D1?logo=linux&logoColor=white)
 ![Licence MIT](https://img.shields.io/badge/licence-MIT-green)
-[![CI](https://github.com/PedroGomesFR/deadlock-blueprint/actions/workflows/ci.yml/badge.svg)](https://github.com/PedroGomesFR/deadlock-blueprint/actions/workflows/ci.yml)
+[![CI](https://github.com/Dakraid/deadlock-blueprint-linux/actions/workflows/ci.yml/badge.svg)](https://github.com/Dakraid/deadlock-blueprint-linux/actions/workflows/ci.yml)
 
-[**📥 Download**](https://github.com/PedroGomesFR/deadlock-blueprint/releases/latest) · [Features](#-features) · [Can I get banned?](#can-i-get-banned) · [FAQ](#-faq) · [Report a problem](#-report-a-problem) · [Français](README.fr.md)
+[**📥 Download**](https://github.com/Dakraid/deadlock-blueprint-linux/releases/latest) · [Features](#-features) · [Can I get banned?](#can-i-get-banned) · [FAQ](#-faq) · [Report a problem](#-report-a-problem) · [Français](README.fr.md)
 
 </div>
 
@@ -65,7 +65,7 @@ The interface and the hero guides are in English, French and Italian. Item and a
 
 ## 📥 Installation
 
-Download from the [**latest release**](https://github.com/PedroGomesFR/deadlock-blueprint/releases/latest):
+Download from the [**latest release**](https://github.com/Dakraid/deadlock-blueprint-linux/releases/latest):
 
 | File | |
 | :--- | :--- |
@@ -76,7 +76,7 @@ chmod +x Deadlock-Blueprint-<version>.AppImage
 ./Deadlock-Blueprint-<version>.AppImage
 ```
 
-**Requirements:** a **Wayland** session with `xdg-desktop-portal` and PipeWire (KDE Plasma 6 tested; GNOME best effort). Deadlock itself runs through **Proton**, fullscreen or borderless. On first start the app writes its desktop entry (`~/.local/share/applications/com.vandicta.deadlock-blueprint.desktop`): the desktop portals identify apps by it.
+**Requirements:** a **Wayland** session with `xdg-desktop-portal` and PipeWire (KDE Plasma 6 tested; GNOME best effort), and FUSE 2 for the AppImage (`fuse2` on Arch, `libfuse2t64` on Ubuntu). Deadlock itself runs through **Proton**, fullscreen or borderless. On first start the app writes its desktop entry (`~/.local/share/applications/com.vandicta.deadlock-blueprint.desktop`): the desktop portals identify apps by it.
 
 > [!NOTE]
 > Each release is **built by GitHub Actions from the public source code** and lists the **SHA-256** of the file. To check your download: `sha256sum Deadlock-Blueprint-<version>.AppImage`.
@@ -177,7 +177,7 @@ About 650 MB in total, stable over time, of which about 400 MB is the video capt
 **Requirements:** [Node.js](https://nodejs.org) 20 or later, Linux with a Wayland session.
 
 ```bash
-git clone https://github.com/PedroGomesFR/deadlock-blueprint.git
+git clone https://github.com/Dakraid/deadlock-blueprint-linux.git
 cd deadlock-blueprint
 npm install
 npm run dev

@@ -4,10 +4,10 @@
   "description": "Real-time build coach and overlay for Deadlock: reads the game screen and tells you what to buy next.",
   "author": "Pedro Gomes",
   "license": "MIT",
-  "homepage": "https://github.com/PedroGomesFR/deadlock-blueprint",
+  "homepage": "https://github.com/Dakraid/deadlock-blueprint-linux",
   "repository": {
     "type": "git",
-    "url": "https://github.com/PedroGomesFR/deadlock-blueprint.git"
+    "url": "https://github.com/Dakraid/deadlock-blueprint-linux.git"
   },
   "main": "electron/main.cjs",
   "scripts": {
@@ -44,8 +44,8 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "PedroGomesFR",
-        "repo": "deadlock-blueprint",
+        "owner": "Dakraid",
+        "repo": "deadlock-blueprint-linux",
         "releaseType": "release"
       }
     ],

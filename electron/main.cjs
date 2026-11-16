@@ -4,8 +4,8 @@ const fs = require('fs');
 const os = require('os');
 const { writeZip } = require('./zip.cjs');
 
-const REPO_URL = 'https://github.com/PedroGomesFR/deadlock-blueprint';
-const RELEASES_API = 'https://api.github.com/repos/PedroGomesFR/deadlock-blueprint/releases/latest';
+const REPO_URL = 'https://github.com/Dakraid/deadlock-blueprint-linux';
+const RELEASES_API = 'https://api.github.com/repos/Dakraid/deadlock-blueprint-linux/releases/latest';
 // Only the AppImage can update itself (electron-updater replaces the file); other runs only offer the download
 const isAppImage = Boolean(process.env.APPIMAGE);
 let autoUpdater = null;
@@ -67,6 +67,31 @@ function ensureDesktopEntry() {
   }
 }
 ensureDesktopEntry();
+
+/**
+ * KDE: global shortcuts worked on the first launch only. Chromium skips BindShortcuts when the portal (version 1)
+ * already lists every shortcut id, and the ids are stable (hash of the profile), but KWin only triggers the
+ * shortcuts of a session that bound them. cleanUp() drops the component's inactive shortcuts (those of a previous
+ * launch, nothing is bound while no instance runs), so this launch binds them again. A trigger changed in System
+ * Settings is reset to the app's own at each launch.
+ */
+function resetKdeShortcuts() {
+  if (!/kde/i.test(process.env.XDG_CURRENT_DESKTOP || '')) return;
+  try {
+    require('child_process').execFileSync(
+      'gdbus',
+      [
+        'call', '--session', '--dest', 'org.kde.kglobalaccel',
+        '--object-path', `/component/${DESKTOP_ID.replace(/[.-]/g, '_')}`,
+        '--method', 'org.kde.kglobalaccel.Component.cleanUp',
+      ],
+      { timeout: 2000, stdio: 'ignore' }
+    );
+  } catch {
+    // No such component yet (first launch) or no gdbus: nothing to reset
+  }
+}
+resetKdeShortcuts();
 
 let mainWindow = null;
 let overlayWindow = null;

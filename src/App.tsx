@@ -2456,7 +2456,7 @@ export function App() {
         {isReportOpen && (
           <ReportDialog
             onClose={() => setIsReportOpen(false)}
-            repoUrl={appInfo?.repoUrl ?? 'https://github.com/PedroGomesFR/deadlock-blueprint'}
+            repoUrl={appInfo?.repoUrl ?? 'https://github.com/Dakraid/deadlock-blueprint-linux'}
             logsEnabled={logsEnabled}
             collect={collectReport}
           />

@@ -79,7 +79,6 @@ export const DiagnosticsTab: React.FC<DiagnosticsTabProps> = ({
           <span className="text-body text-ink">{t(`capture.state.${captureState}`)}</span>
           <Button
             onClick={onChooseCapture}
-            disabled={captureState === 'picking'}
             icon={<MonitorUp className="w-3.5 h-3.5" />}
           >
             {t('capture.choose')}

@@ -54,7 +54,11 @@ export const KWIN_GAMMA_INVERSE = Uint8Array.from({ length: 256 }, (_, v) => {
 
 let correctionCanvas: OffscreenCanvas | null = null;
 
-/** The frame with every channel through `lut` (one pass over its pixels); the input frame is closed. */
+/**
+ * The frame with every channel through `lut`; the input frame is closed.
+ * shortcut: 23 ms median per 2560x1440 frame (measured, Electron 45), on the renderer thread every scan; if scans
+ * get slow, apply it to the 1920x1080 normalized canvas in the scanner instead (half the pixels).
+ */
 function applyLut(bitmap: ImageBitmap, lut: Uint8Array): ImageBitmap {
   if (!correctionCanvas || correctionCanvas.width !== bitmap.width || correctionCanvas.height !== bitmap.height) {
     correctionCanvas = new OffscreenCanvas(bitmap.width, bitmap.height);
@@ -77,6 +81,8 @@ let stream: MediaStream | null = null;
 let grabber: FrameGrabber | null = null;
 let activeSource: CaptureSourceInfo | null = null;
 let state: CaptureState = 'idle';
+// Each opening of the picker; an older one that answers late (picker cancelled but never settled) is ignored
+let generation = 0;
 const listeners = new Set<(state: CaptureState) => void>();
 
 function setState(next: CaptureState): void {
@@ -103,10 +109,12 @@ function closeStream(): void {
 
 /** Portal picker, then one stream on the chosen window or screen. No timeout: the player may take a while to choose. */
 async function openCapture(): Promise<void> {
+  const current = ++generation;
   closeStream();
   setState('picking');
   try {
     const source = await window.electronAPI!.pickCaptureSource();
+    if (current !== generation) return;
     if (!source) throw new Error('Aucune source choisie');
     // Legacy Chromium constraints: the only way to capture a given desktopCapturer source with getUserMedia
     const constraints = {
@@ -122,6 +130,10 @@ async function openCapture(): Promise<void> {
       },
     } as unknown as MediaStreamConstraints;
     const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+    if (current !== generation) {
+      newStream.getTracks().forEach((t) => t.stop());
+      return;
+    }
     const track = newStream.getVideoTracks()[0];
     if (!track) {
       newStream.getTracks().forEach((t) => t.stop());
@@ -138,15 +150,16 @@ async function openCapture(): Promise<void> {
     activeSource = source;
     setState('live');
   } catch (err) {
+    if (current !== generation) return;
     console.warn('Capture :', err);
     closeStream();
     setState('stopped');
   }
 }
 
-/** Player's action ("Choose the Deadlock window"): opens the portal picker again. */
+/** Player's action ("Choose the Deadlock window"): opens the portal picker again, even over one that never answered. */
 export function requestCapturePick(): void {
-  if (state === 'picking' || !window.electronAPI || !ImageCaptureCtor) return;
+  if (!window.electronAPI || !ImageCaptureCtor) return;
   void openCapture();
 }
 
