@@ -4,7 +4,7 @@ Thanks for helping! This guide covers the setup, the tests, and the four jobs th
 
 ## Setup
 
-Linux with a Wayland session (KDE Plasma 6 tested), `xdg-desktop-portal` + PipeWire, and [Node.js](https://nodejs.org) 20+.
+KDE Plasma 6 on Wayland (the only supported desktop), `xdg-desktop-portal` + PipeWire, and [Node.js](https://nodejs.org) 20+.
 
 ```bash
 npm install

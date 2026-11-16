@@ -56,7 +56,7 @@ Un panneau transparent affiche ton ordre de sorts et tes 3 prochains achats. En 
 Pour le **disposer**, appuie sur son bouton ⚙ ou sur <kbd>Alt</kbd> + <kbd>K</kbd> : fais glisser son en-tête pour le déplacer, son coin ↘ pour le redimensionner, et règle son **opacité** (pour moins cacher la minicarte) et sa **taille** (100 / 85 / 70 %). Les boutons sont masqués en mode fantôme, puisque les clics vont au jeu : <kbd>Alt</kbd> + <kbd>L</kbd> les fait revenir.
 
 > [!IMPORTANT]
-> Wayland ne laisse pas une application garder sa fenêtre au-dessus d'un jeu plein écran ni refuser le focus. Sous **KDE Plasma**, lance une fois `linux/install-kwin-rule.sh` (ou importe `linux/deadlock-blueprint.kwinrule` dans Configuration du système › Gestion des fenêtres › Règles de fenêtres) : l'overlay reste alors au-dessus de Deadlock, cliquer dessus ne prend jamais le focus au jeu, et KWin retient sa position. Autres bureaux : au mieux, sans ces garanties.
+> Wayland ne laisse pas une application garder sa fenêtre au-dessus d'un jeu plein écran ni refuser le focus. Sous **KDE Plasma**, lance une fois `linux/install-kwin-rule.sh` (ou importe `linux/deadlock-blueprint.kwinrule` dans Configuration du système › Gestion des fenêtres › Règles de fenêtres) : l'overlay reste alors au-dessus de Deadlock, cliquer dessus ne prend jamais le focus au jeu, et KWin retient sa position. Seul KDE Plasma sous Wayland est pris en charge : les autres bureaux ne sont pas testés et n'ont pas cette règle.
 
 ### 🌍 Français, anglais, italien
 L'interface et les guides des héros sont en français, en anglais et en italien. Les noms, descriptions et stats des objets et des sorts viennent des textes officiels du jeu dans chaque langue.
@@ -74,7 +74,7 @@ chmod +x Deadlock-Blueprint-<version>.AppImage
 ./Deadlock-Blueprint-<version>.AppImage
 ```
 
-**Prérequis :** une session **Wayland** avec `xdg-desktop-portal` et PipeWire (testé sous KDE Plasma 6 ; GNOME au mieux), et FUSE 2 pour l'AppImage (`fuse2` sous Arch, `libfuse2t64` sous Ubuntu). Deadlock tourne avec **Proton**, en plein écran ou fenêtré sans bordure. Au premier lancement, l'application écrit son entrée de bureau (`~/.local/share/applications/com.vandicta.deadlock-blueprint.desktop`) : les portails du bureau identifient les applications par elle.
+**Prérequis :** une session **Wayland** avec `xdg-desktop-portal` et PipeWire (**KDE Plasma 6 sous Wayland**, le seul bureau pris en charge), et FUSE 2 pour l'AppImage (`fuse2` sous Arch, `libfuse2t64` sous Ubuntu). Deadlock tourne avec **Proton**, en plein écran ou fenêtré sans bordure. Au premier lancement, l'application écrit son entrée de bureau (`~/.local/share/applications/com.vandicta.deadlock-blueprint.desktop`) : les portails du bureau identifient les applications par elle.
 
 > [!NOTE]
 > Chaque version est **compilée par GitHub Actions à partir du code source public** et liste le **SHA-256** du fichier. Pour vérifier ton téléchargement : `sha256sum Deadlock-Blueprint-<version>.AppImage`.
@@ -146,7 +146,7 @@ Clique sur le héros en haut à gauche et choisis le bon : il est verrouillé po
 <details>
 <summary><b>Rien n'est détecté</b></summary>
 
-- Vérifie que la fenêtre du jeu s'appelle bien « Deadlock », qu'elle n'est pas réduite et que ton format d'écran est pris en charge (voir [Configurations prises en charge](#%EF%B8%8F-configurations-prises-en-charge)).
+- Vérifie que tu as partagé la fenêtre de Deadlock (ou son écran) dans la fenêtre de partage du système : l'onglet **Diagnostic** indique l'état de la capture et a un bouton **Choisir la fenêtre Deadlock**. Vérifie que le jeu n'est pas réduit et que ton format d'écran est pris en charge (voir [Configurations prises en charge](#%EF%B8%8F-configurations-prises-en-charge)).
 - Vérifie que **Auto** (à côté de Scan, en haut) est activé : il allume et éteint le scan automatique.
 - La détection des héros a besoin de la barre du haut (scores des deux équipes). Les modes sans cette barre, comme l'entraînement, ne sont pas reconnus.
 - L'onglet **Diagnostic** indique la source capturée et ce qui est reconnu.
@@ -167,7 +167,7 @@ Seulement pour télécharger les builds de la semaine et vérifier les mises à 
 <details>
 <summary><b>Combien de RAM utilise l'application ?</b></summary>
 
-Environ 650 Mo au total, stable dans le temps, dont environ 400 Mo pour le pipeline de capture vidéo (processus GPU).
+Environ 650 Mo au total sous Windows (2.1.x), dont environ 400 Mo pour le pipeline de capture vidéo (processus GPU). Pas encore mesuré sous Linux.
 </details>
 
 ## 🛠️ Développement
@@ -176,7 +176,7 @@ Environ 650 Mo au total, stable dans le temps, dont environ 400 Mo pour le pipel
 
 ```bash
 git clone https://github.com/Dakraid/deadlock-blueprint-linux.git
-cd deadlock-blueprint
+cd deadlock-blueprint-linux
 npm install
 npm run dev
 ```

@@ -58,7 +58,7 @@ A transparent panel shows your ability order and your next 3 purchases. In **gho
 To **arrange** it, press its ⚙ button or <kbd>Alt</kbd> + <kbd>K</kbd>: drag its header to move it, its ↘ corner to resize it, and set its **opacity** (so it hides less of the minimap) and its **size** (100 / 85 / 70 %). The buttons are hidden in ghost mode, since clicks go through to the game: <kbd>Alt</kbd> + <kbd>L</kbd> brings them back.
 
 > [!IMPORTANT]
-> Wayland does not let an app keep its own window above a fullscreen game or refuse the focus. On **KDE Plasma**, run `linux/install-kwin-rule.sh` once (or import `linux/deadlock-blueprint.kwinrule` in System Settings › Window Management › Window Rules): the overlay then stays above Deadlock, clicking it never takes the focus from the game, and KWin remembers where you put it. Other desktops: best effort, without these guarantees.
+> Wayland does not let an app keep its own window above a fullscreen game or refuse the focus. On **KDE Plasma**, run `linux/install-kwin-rule.sh` once (or import `linux/deadlock-blueprint.kwinrule` in System Settings › Window Management › Window Rules): the overlay then stays above Deadlock, clicking it never takes the focus from the game, and KWin remembers where you put it. Only KDE Plasma on Wayland is supported: other desktops are untested and have no such rule.
 
 ### 🌍 English, French, Italian
 The interface and the hero guides are in English, French and Italian. Item and ability names, descriptions and stats come from the game's official texts in each language.
@@ -76,7 +76,7 @@ chmod +x Deadlock-Blueprint-<version>.AppImage
 ./Deadlock-Blueprint-<version>.AppImage
 ```
 
-**Requirements:** a **Wayland** session with `xdg-desktop-portal` and PipeWire (KDE Plasma 6 tested; GNOME best effort), and FUSE 2 for the AppImage (`fuse2` on Arch, `libfuse2t64` on Ubuntu). Deadlock itself runs through **Proton**, fullscreen or borderless. On first start the app writes its desktop entry (`~/.local/share/applications/com.vandicta.deadlock-blueprint.desktop`): the desktop portals identify apps by it.
+**Requirements:** a **Wayland** session with `xdg-desktop-portal` and PipeWire (**KDE Plasma 6 on Wayland**, the only supported desktop), and FUSE 2 for the AppImage (`fuse2` on Arch, `libfuse2t64` on Ubuntu). Deadlock itself runs through **Proton**, fullscreen or borderless. On first start the app writes its desktop entry (`~/.local/share/applications/com.vandicta.deadlock-blueprint.desktop`): the desktop portals identify apps by it.
 
 > [!NOTE]
 > Each release is **built by GitHub Actions from the public source code** and lists the **SHA-256** of the file. To check your download: `sha256sum Deadlock-Blueprint-<version>.AppImage`.
@@ -148,7 +148,7 @@ Click the hero at the top left and pick the right one: it is locked for the matc
 <details>
 <summary><b>Nothing is detected</b></summary>
 
-- Check that the game window is called "Deadlock" and is not minimized, and that your screen format is supported (see [Supported setups](#%EF%B8%8F-supported-setups)).
+- Check that you shared the Deadlock window (or its screen) in the system's sharing dialog: **Diagnostics** shows the capture state and has a **Choose the Deadlock window** button. Check that the game is not minimized and that your screen format is supported (see [Supported setups](#%EF%B8%8F-supported-setups)).
 - Check that **Auto** (next to Scan, at the top) is on: it turns the automatic scan on and off.
 - Hero detection needs the top bar (both teams' scores). Modes without it, such as the training range, are not recognized.
 - The **Diagnostics** tab shows the captured source and what is recognized.
@@ -169,7 +169,7 @@ Only to download the weekly builds and to check for updates. Without Internet it
 <details>
 <summary><b>How much RAM does it use?</b></summary>
 
-About 650 MB in total, stable over time, of which about 400 MB is the video capture pipeline (GPU process).
+About 650 MB in total on Windows (2.1.x), of which about 400 MB was the video capture pipeline (GPU process). Not measured yet on Linux.
 </details>
 
 ## 🛠️ Development
@@ -178,7 +178,7 @@ About 650 MB in total, stable over time, of which about 400 MB is the video capt
 
 ```bash
 git clone https://github.com/Dakraid/deadlock-blueprint-linux.git
-cd deadlock-blueprint
+cd deadlock-blueprint-linux
 npm install
 npm run dev
 ```
