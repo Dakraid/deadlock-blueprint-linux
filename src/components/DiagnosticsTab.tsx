@@ -1,17 +1,16 @@
 import React from 'react';
-import { Camera, FolderOpen, LifeBuoy, Terminal } from 'lucide-react';
+import { Camera, FolderOpen, LifeBuoy, MonitorUp, Terminal } from 'lucide-react';
 import { useI18n } from '../i18n';
-import type { ElectronSourceInfo } from '../electron';
+import type { CaptureState } from '../services/screenCapture';
 import type { VisionDetectionResult } from '../services/visionScanner';
 import { isSupportedFormat } from '../services/matchTracker';
 import type { DeadlockHero } from '../data/deadlockData';
-import { Button, Card, SectionHeader, SegmentedControl } from '../ui';
+import { Button, Card, SectionHeader } from '../ui';
 
 interface DiagnosticsTabProps {
   heroes: DeadlockHero[];
-  sources: ElectronSourceInfo[];
-  selectedSourceId: string;
-  onSelectSource: (id: string) => void;
+  captureState: CaptureState;
+  onChooseCapture: () => void;
   onScanNow: () => void;
   onReport: () => void;
   lastCaptureUrl: string | null;
@@ -34,9 +33,8 @@ const Preview: React.FC<{ src?: string | null; alt: string; empty: string }> = (
 /** What the scanner sees, live while this tab is open (previews, portraits, inventory slots, raw logs). */
 export const DiagnosticsTab: React.FC<DiagnosticsTabProps> = ({
   heroes,
-  sources,
-  selectedSourceId,
-  onSelectSource,
+  captureState,
+  onChooseCapture,
   onScanNow,
   onReport,
   lastCaptureUrl,
@@ -76,19 +74,16 @@ export const DiagnosticsTab: React.FC<DiagnosticsTabProps> = ({
           }
         />
 
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-small text-ink-muted font-semibold mr-1">{t('diag.target')}</span>
-          <SegmentedControl
-            tone="accent"
-            label={t('diag.target')}
-            value={selectedSourceId}
-            onChange={onSelectSource}
-            className="flex-wrap"
-            options={[
-              { value: '', label: t('diag.auto') },
-              ...sources.map((src) => ({ value: src.id, label: t('diag.screen', src.name, src.width ?? 0, src.height ?? 0) })),
-            ]}
-          />
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-small text-ink-muted font-semibold">{t('diag.target')}</span>
+          <span className="text-body text-ink">{t(`capture.state.${captureState}`)}</span>
+          <Button
+            onClick={onChooseCapture}
+            disabled={captureState === 'picking'}
+            icon={<MonitorUp className="w-3.5 h-3.5" />}
+          >
+            {t('capture.choose')}
+          </Button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -98,7 +93,7 @@ export const DiagnosticsTab: React.FC<DiagnosticsTabProps> = ({
 
         {d && (
           <div className="space-y-0.5">
-            <Row label={t('diag.source')}>{d.isDeadlockWindow ? t('diag.gameWindow', d.sourceName) : d.sourceName}</Row>
+            <Row label={t('diag.source')}>{d.sourceName}</Row>
             <Row label={t('diag.frame')}>
               <span className={isSupportedFormat(d.frameWidth, d.frameHeight) ? 'text-good-300' : 'text-bad-300 font-bold'}>
                 {d.frameWidth}×{d.frameHeight}

@@ -50,12 +50,11 @@ type PanelProps = {
   heroId: string;
   heroName: string;
   lang: Lang;
-  sourceId: string;
   /** The hero read from the ability icons, once confirmed: the app selects it */
   onHeroDetected: (heroId: string) => void;
 };
 
-const Panel: React.FC<PanelProps> = ({ heroId, heroName, lang, sourceId, onHeroDetected }) => {
+const Panel: React.FC<PanelProps> = ({ heroId, heroName, lang, onHeroDetected }) => {
   const text = streetBrawlText(lang);
   const onHeroDetectedRef = useRef(onHeroDetected);
   onHeroDetectedRef.current = onHeroDetected;
@@ -116,7 +115,7 @@ const Panel: React.FC<PanelProps> = ({ heroId, heroName, lang, sourceId, onHeroD
           getItemTemplates(),
           getAbilityTemplates(),
           getEndScreenTemplates(),
-          grabGameFrame(sourceId),
+          grabGameFrame(),
         ]);
         if (!frame) {
           setDebug(`no frame captured · ${templates.length} icons`);
@@ -126,7 +125,7 @@ const Panel: React.FC<PanelProps> = ({ heroId, heroName, lang, sourceId, onHeroD
           releaseGameFrame(frame);
           return;
         }
-        const size = typeof frame.image === 'string' ? 'thumbnail' : `${frame.image.width}x${frame.image.height}`;
+        const size = `${frame.image.width}x${frame.image.height}`;
         let pixels: Awaited<ReturnType<typeof framePixels>>;
         try {
           pixels = await framePixels(frame.image, canvasRef.current!);
@@ -134,7 +133,7 @@ const Panel: React.FC<PanelProps> = ({ heroId, heroName, lang, sourceId, onHeroD
           releaseGameFrame(frame);
         }
         setNotWide(pixels === 'not-wide');
-        const source = `${frame.sourceName}${frame.isDeadlockWindow ? '' : ' (not the Deadlock window)'} · ${size}`;
+        const source = `${frame.sourceName} · ${size}`;
         if (!pixels || pixels === 'not-wide') {
           setDebug(`${source} · ${pixels === 'not-wide' ? 'not 16:9' : 'no pixels'}`);
           return;
@@ -224,7 +223,7 @@ const Panel: React.FC<PanelProps> = ({ heroId, heroName, lang, sourceId, onHeroD
       stopped = true;
       clearInterval(timer);
     };
-  }, [sourceId, heroId, dataVersion]);
+  }, [heroId, dataVersion]);
 
   const info = streetBrawlDataInfo();
   const muted = !isOpen || Boolean(advice?.suggestReroll);

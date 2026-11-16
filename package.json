@@ -27,7 +27,7 @@
     "update-builds": "node scripts/update-builds.mjs",
     "update-street-brawl": "node scripts/update-street-brawl.mjs",
     "check-data": "node scripts/update-builds.mjs --check",
-    "dist": "npm run build && electron-builder --win --x64 --publish never"
+    "dist": "npm run build && electron-builder --linux AppImage --x64 --publish never"
   },
   "build": {
     "appId": "com.vandicta.deadlock-blueprint",
@@ -49,18 +49,18 @@
         "releaseType": "release"
       }
     ],
-    "win": {
+    "linux": {
       "icon": "build/icon.png",
+      "category": "Game",
+      "executableName": "deadlock-blueprint",
       "target": [
         {
-          "target": "portable",
+          "target": "AppImage",
           "arch": [
             "x64"
           ]
         }
-      ]
-    },
-    "portable": {
+      ],
       "artifactName": "Deadlock-Blueprint-${version}.${ext}"
     }
   },
@@ -72,7 +72,7 @@
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.0",
-    "electron": "^33.2.0",
+    "electron": "^45.3.3",
     "electron-builder": "^25.1.8",
     "lucide-react": "^0.460.0",
     "postcss": "^8.4.49",

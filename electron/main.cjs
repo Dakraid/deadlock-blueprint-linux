@@ -2,40 +2,71 @@ const { app, BrowserWindow, ipcMain, desktopCapturer, globalShortcut, screen, sh
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const v8 = require('v8');
-const vm = require('vm');
 const { writeZip } = require('./zip.cjs');
 
 const REPO_URL = 'https://github.com/PedroGomesFR/deadlock-blueprint';
 const RELEASES_API = 'https://api.github.com/repos/PedroGomesFR/deadlock-blueprint/releases/latest';
-// The portable exe can't update itself (electron-updater needs the installer): it only offers the download
-const isPortable = Boolean(process.env.PORTABLE_EXECUTABLE_DIR);
+// Only the AppImage can update itself (electron-updater replaces the file); other runs only offer the download
+const isAppImage = Boolean(process.env.APPIMAGE);
 let autoUpdater = null;
 try {
   ({ autoUpdater } = require('electron-updater'));
 } catch {
   // Not installed (development checkout): update notices through the GitHub API only
 }
-const canAutoUpdate = () => app.isPackaged && !isPortable && autoUpdater !== null;
+const canAutoUpdate = () => app.isPackaged && isAppImage && autoUpdater !== null;
 
-// Explicit GC for the fallback thumbnail capture: thumbnails are native memory that V8 does not see, so
-// without it they pile up between collections (several GB with many windows open)
-v8.setFlagsFromString('--expose_gc');
-const collectGarbage = vm.runInNewContext('gc');
-let lastFallbackGc = 0;
-
-// Capture with the classic Windows capturers (DXGI screen duplication, GDI window capture), not Windows.Graphics.Capture
-// (WGC): every recorded game and the scanner's calibration use them, and WGC logs "ProcessFrame failed" on the game
-// window, fails on some windows (wgc_capturer_win.cc -2147024809), and draws a yellow border around the captured
-// game on Windows 10. The frame size comes from the stream's constraints (screenCapture.ts) with either capturer.
-app.commandLine.appendSwitch(
-  'disable-features',
-  'AllowWgcScreenCapturer,AllowWgcScreenZeroHz,AllowWgcWindowCapturer,AllowWgcWindowZeroHz,WebRtcAllowWgcDesktopCapturer'
-);
+// Linux Wayland only: screen capture (ScreenCast) and global shortcuts (GlobalShortcuts) go through
+// xdg-desktop-portal, which refuses apps it cannot match to an installed .desktop file (xdg-desktop-portal 1.21+).
+// The same id is the Wayland app_id the KWin window rule of the overlay matches (linux/deadlock-blueprint.kwinrule).
+const DESKTOP_ID = 'com.vandicta.deadlock-blueprint';
+app.setDesktopName(`${DESKTOP_ID}.desktop`);
+app.commandLine.appendSwitch('ozone-platform', 'wayland');
 // Suppress noisy Chromium stderr logs
 app.commandLine.appendSwitch('log-level', '3');
 
 const APP_ICON = path.join(__dirname, '../dist/icons/upscalemedia-transformed.png');
+const OVERLAY_TITLE = 'Deadlock Blueprint Overlay';
+
+/**
+ * Writes the .desktop file (and its icon) the portals identify the app by, if missing or pointing elsewhere: a
+ * development checkout or an AppImage is not installed. Rewritten when the AppImage moves.
+ */
+function ensureDesktopEntry() {
+  try {
+    const dataHome = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
+    // Unthemed icon, found directly in the icons base directory (icon theme spec fallback)
+    const icon = path.join(dataHome, 'icons', `${DESKTOP_ID}.png`);
+    if (fs.existsSync(APP_ICON) && !fs.existsSync(icon)) {
+      fs.mkdirSync(path.dirname(icon), { recursive: true });
+      fs.copyFileSync(APP_ICON, icon);
+    }
+    const quote = (arg) => `"${String(arg).replace(/(["`$\\])/g, '\\$1')}"`;
+    const exec = process.env.APPIMAGE
+      ? [process.env.APPIMAGE]
+      : app.isPackaged
+      ? [process.execPath]
+      : [process.execPath, app.getAppPath()];
+    const content = [
+      '[Desktop Entry]',
+      'Type=Application',
+      'Name=Deadlock Blueprint',
+      'Comment=Real-time build coach and overlay for Deadlock',
+      `Exec=${exec.map(quote).join(' ')}`,
+      `Icon=${DESKTOP_ID}`,
+      `StartupWMClass=${DESKTOP_ID}`,
+      'Categories=Game;Utility;',
+      '',
+    ].join('\n');
+    const file = path.join(dataHome, 'applications', `${DESKTOP_ID}.desktop`);
+    if (fs.existsSync(file) && fs.readFileSync(file, 'utf8') === content) return;
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, content);
+  } catch (error) {
+    console.error('desktop entry', error);
+  }
+}
+ensureDesktopEntry();
 
 let mainWindow = null;
 let overlayWindow = null;
@@ -59,7 +90,7 @@ function getAppUrlOrFile(win) {
   }
 }
 
-/** Physical pixel resolution of a display (Electron's `bounds` is divided by Windows DPI scaleFactor). */
+/** Physical pixel resolution of a display (Electron's `bounds` is in logical pixels, divided by the scale factor). */
 function getDisplayPixelSize(disp) {
   if (!disp) return { width: 0, height: 0 };
   const scale = disp.scaleFactor || 1;
@@ -67,23 +98,6 @@ function getDisplayPixelSize(disp) {
     width: Math.round(disp.bounds.width * scale),
     height: Math.round(disp.bounds.height * scale),
   };
-}
-
-function getGamingDisplay() {
-  const displays = screen.getAllDisplays();
-  const primary = screen.getPrimaryDisplay();
-  // Prefer primary display if landscape, otherwise the highest-resolution landscape display
-  if (primary.bounds.width >= primary.bounds.height) {
-    return primary;
-  }
-  const landscapes = displays
-    .filter((d) => d.bounds.width > d.bounds.height)
-    .sort((a, b) => {
-      const pa = getDisplayPixelSize(a);
-      const pb = getDisplayPixelSize(b);
-      return pb.width * pb.height - pa.width * pa.height;
-    });
-  return landscapes[0] || primary;
 }
 
 function createWindow() {
@@ -122,23 +136,17 @@ function createWindow() {
 function ensureOverlayWindow() {
   if (overlayWindow && !overlayWindow.isDestroyed()) return overlayWindow;
 
-  const gamingDisplay = getGamingDisplay();
-  const { x, y, width, height } = gamingDisplay.bounds;
-
+  // Wayland lets no client place itself, stay above other windows or refuse the focus: the KWin window rule
+  // (linux/deadlock-blueprint.kwinrule) matches this title and the app id, and puts the overlay in KWin's overlay
+  // layer (above a fullscreen game), keeps the focus on the game when clicked, and remembers its position.
   overlayWindow = new BrowserWindow({
-    x: x + width - 395,
-    y: y + Math.max(40, Math.floor((height - 640) / 2)),
     width: 380,
     height: 640,
+    title: OVERLAY_TITLE,
     frame: false,
     transparent: true,
     resizable: true,
     skipTaskbar: true,
-    alwaysOnTop: true,
-    // Clicking the overlay (copy button) must not take focus from Deadlock: the game then acted as if alt-tabbed
-    // (its audio stopped). WS_EX_NOACTIVATE on Windows; the overlay has no text field to type in. Focusable only
-    // in arrange mode (setOverlayArranging).
-    focusable: false,
     hasShadow: false,
     backgroundColor: '#00000000',
     webPreferences: {
@@ -149,8 +157,8 @@ function ensureOverlayWindow() {
     },
   });
 
-  overlayWindow.setAlwaysOnTop(true, 'screen-saver');
-  overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // The page's <title> would replace the one the window rule matches
+  overlayWindow.on('page-title-updated', (event) => event.preventDefault());
 
   const isDevServer = process.argv.includes('--dev');
   const distIndex = path.join(__dirname, '../dist/index.html');
@@ -161,10 +169,6 @@ function ensureOverlayWindow() {
   }
 
   overlayScale = 1;
-  // Clicking the game (or alt-tabbing) ends arrange mode: the overlay is then already in the background
-  overlayWindow.on('blur', () => {
-    if (isOverlayArranging) setOverlayArranging(false);
-  });
   overlayWindow.on('closed', () => {
     overlayWindow = null;
     isOverlayMode = false;
@@ -195,9 +199,7 @@ function toggleOverlayMode(forceState) {
   isOverlayMode = targetState;
 
   if (isOverlayMode) {
-    const ov = ensureOverlayWindow();
-    ov.showInactive();
-    ov.setAlwaysOnTop(true, 'screen-saver');
+    ensureOverlayWindow().showInactive();
   } else {
     isClickThrough = false;
     setOverlayArranging(false);
@@ -218,7 +220,7 @@ function toggleClickThrough(forceState) {
   if (isClickThrough) setOverlayArranging(false);
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     if (isClickThrough) {
-      overlayWindow.setIgnoreMouseEvents(true, { forward: true });
+      overlayWindow.setIgnoreMouseEvents(true);
     } else {
       overlayWindow.setIgnoreMouseEvents(false);
     }
@@ -227,11 +229,8 @@ function toggleClickThrough(forceState) {
 }
 
 /**
- * Arrange mode (⚙ or Alt+K): the overlay takes the focus, like 1.4.2, so that it can be moved, resized and set.
- * Without the focus, a player could not use the overlay at all with Deadlock in front (1.4.3), and edge resizing
- * failed even over another app (measured: right edge ignored, bottom edge resized). The game loses the focus (its
- * audio pauses) only while arranging; copy buttons never take it. Ends on Alt+K, ⚙, ghost mode, hiding, or a click
- * in the game (blur).
+ * Arrange mode (⚙ or Alt+K): shows the overlay's settings and its resize corner, and lets it be dragged by its
+ * header. Ends on Alt+K, ⚙, ghost mode or hiding.
  */
 function setOverlayArranging(enable) {
   const next = Boolean(enable);
@@ -239,21 +238,9 @@ function setOverlayArranging(enable) {
   if (!overlayWindow || overlayWindow.isDestroyed() || next === isOverlayArranging) return;
   isOverlayArranging = next;
 
-  if (next) {
-    if (isClickThrough) {
-      isClickThrough = false;
-      overlayWindow.setIgnoreMouseEvents(false);
-    }
-    overlayWindow.setFocusable(true);
-    overlayWindow.focus();
-  } else if (overlayWindow.isFocused()) {
-    // setFocusable(false) hands the focus to the next visible window below the overlay: still topmost, that was the
-    // taskbar (measured); one level down it is the window that had the focus before, the game.
-    overlayWindow.setAlwaysOnTop(false);
-    overlayWindow.setFocusable(false);
-    overlayWindow.setAlwaysOnTop(true, 'screen-saver');
-  } else {
-    overlayWindow.setFocusable(false);
+  if (next && isClickThrough) {
+    isClickThrough = false;
+    overlayWindow.setIgnoreMouseEvents(false);
   }
   broadcastOverlayState();
 }
@@ -279,10 +266,6 @@ app.whenReady().then(() => {
     }
   });
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
-
   setupAutoUpdater();
   setTimeout(() => checkForUpdates(false), 10000);
   setInterval(() => checkForUpdates(false), 6 * 3600 * 1000);
@@ -293,171 +276,24 @@ app.on('will-quit', () => {
   endMatchLog();
 });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+app.on('window-all-closed', () => app.quit());
 
 // IPC Handlers
 
-// Picks what to capture WITHOUT taking any thumbnail (thumbnailSize 0): cheap enough to run every few
-// seconds. The frames come from a single live stream the renderer opens on this source
-// (src/services/screenCapture.ts).
-ipcMain.handle('find-capture-source', async (_event, preferredSourceId) => {
+// What to capture: on Wayland only the xdg-desktop-portal picker can choose it (window or screen), and the stream the
+// renderer opens on the returned id reuses that choice (src/services/screenCapture.ts). Called once per launch and
+// when the player asks to choose again, never in a loop: each call opens the picker.
+ipcMain.handle('pick-capture-source', async () => {
   try {
-    const displays = screen.getAllDisplays();
-    const gamingDisplay = getGamingDisplay();
     const sources = await desktopCapturer.getSources({
       types: ['window', 'screen'],
       thumbnailSize: { width: 0, height: 0 },
       fetchWindowIcons: false,
     });
-    // Raw names: the interface adds its own (translated) labels
-    const describe = (s, isDeadlockWindow) => {
-      const disp = displays.find((d) => String(d.id) === String(s.display_id)) || gamingDisplay;
-      const px = getDisplayPixelSize(disp);
-      return {
-        id: s.id,
-        isDeadlockWindow,
-        sourceName: isDeadlockWindow ? s.name : `${s.name} (${px.width}x${px.height})`,
-      };
-    };
-
-    // 1. User explicitly chosen source
-    const preferred = preferredSourceId && sources.find((s) => s.id === preferredSourceId);
-    if (preferred) return describe(preferred, /^deadlock$/i.test(preferred.name.trim()) || /project8/i.test(preferred.name));
-
-    // 2. Direct Deadlock Game Window (ignores Windows taskbar and other overlapping windows!)
-    const dlWin = sources.find(
-      (s) => s.id.startsWith('window:') && (/^deadlock$/i.test(s.name.trim()) || /project8/i.test(s.name))
-    );
-    if (dlWin) return describe(dlWin, true);
-
-    // 3. Fallback: Primary Gaming Monitor
-    const screenSources = sources.filter((s) => s.id.startsWith('screen:'));
-    const screenSource =
-      screenSources.find((s) => String(s.display_id) === String(gamingDisplay.id)) || screenSources[0];
-    return screenSource ? describe(screenSource, false) : null;
+    const source = sources[0];
+    return source ? { id: source.id, sourceName: source.name || source.id } : null;
   } catch {
     return null;
-  }
-});
-
-// Fallback capture only (when the live stream is not available): a thumbnail of EVERY window and
-// screen per call, so it is heavy and needs the explicit GC below.
-ipcMain.handle('capture-screen', async (_event, preferredSourceId) => {
-  try {
-    const displays = screen.getAllDisplays();
-    const gamingDisplay = getGamingDisplay();
-    const gamingDisplayId = String(gamingDisplay.id);
-    const gamingPx = getDisplayPixelSize(gamingDisplay);
-
-    // Same size limit as the live stream (screenCapture.ts): a thumbnail is taken of every window and screen,
-    // and 4K ones would be 4 times heavier for the same reading
-    const sources = await desktopCapturer.getSources({
-      types: ['window', 'screen'],
-      thumbnailSize: {
-        width: Math.max(1920, Math.min(2560, gamingPx.width || 1920)),
-        height: Math.max(1080, Math.min(1600, gamingPx.height || 1080)),
-      },
-      fetchWindowIcons: false,
-    });
-
-    let targetSource = null;
-    let isDeadlockWindow = false;
-
-    // 1. User explicitly chosen source
-    if (preferredSourceId) {
-      targetSource = sources.find((s) => s.id === preferredSourceId && !s.thumbnail.isEmpty());
-      if (targetSource && /deadlock|project8/i.test(targetSource.name)) {
-        isDeadlockWindow = true;
-      }
-    }
-
-    // 2. Direct Deadlock Game Window (ignores Windows taskbar and other overlapping windows!)
-    if (!targetSource) {
-      const dlWin = sources.find(
-        (s) =>
-          s.id.startsWith('window:') &&
-          !s.thumbnail.isEmpty() &&
-          (/^deadlock$/i.test(s.name.trim()) || /project8/i.test(s.name))
-      );
-      if (dlWin) {
-        targetSource = dlWin;
-        isDeadlockWindow = true;
-      }
-    }
-
-    // 3. Fallback: Primary Gaming Monitor
-    if (!targetSource) {
-      const screenSources = sources.filter((s) => s.id.startsWith('screen:') && !s.thumbnail.isEmpty());
-      targetSource =
-        screenSources.find((s) => String(s.display_id) === gamingDisplayId) ||
-        screenSources[0];
-    }
-
-    if (!targetSource) {
-      return { success: false, error: 'No video source found.' };
-    }
-
-    const jpegBuf = targetSource.thumbnail.toJPEG(92);
-    const dataUrl = `data:image/jpeg;base64,${jpegBuf.toString('base64')}`;
-    const size = targetSource.thumbnail.getSize();
-    const disp = displays.find((d) => String(d.id) === String(targetSource.display_id)) || gamingDisplay;
-    const px = getDisplayPixelSize(disp);
-
-    return {
-      success: true,
-      sourceName: isDeadlockWindow
-        ? targetSource.name
-        : `${targetSource.name} (${px.width}x${px.height})`,
-      sourceId: targetSource.id,
-      isDeadlockWindow,
-      width: size.width,
-      height: size.height,
-      dataUrl,
-      availableSources: sources
-        .filter((s) => !s.thumbnail.isEmpty())
-        .map((s) => ({
-          id: s.id,
-          name: s.id.startsWith('window:') ? `🎮 ${s.name}` : `🖥️ ${s.name}`,
-          type: s.id.startsWith('window:') ? 'window' : 'screen',
-        })),
-    };
-  } catch (err) {
-    return {
-      success: false,
-      error: err.message || 'Screen capture failed.',
-    };
-  } finally {
-    // Free this call's thumbnails once they are out of scope (at most every 2 s: a full GC costs a few ms)
-    if (Date.now() - lastFallbackGc > 2000) {
-      lastFallbackGc = Date.now();
-      setImmediate(collectGarbage);
-    }
-  }
-});
-
-ipcMain.handle('get-sources', async () => {
-  try {
-    const displays = screen.getAllDisplays();
-    const sources = await desktopCapturer.getSources({
-      types: ['screen'],
-      thumbnailSize: { width: 320, height: 180 },
-    });
-    return sources.map((s) => {
-      const disp = displays.find((d) => String(d.id) === String(s.display_id));
-      const px = getDisplayPixelSize(disp);
-      return {
-        id: s.id,
-        name: s.name,
-        type: 'screen',
-        width: px.width,
-        height: px.height,
-        preview: s.thumbnail.toDataURL(),
-      };
-    });
-  } catch {
-    return [];
   }
 });
 
@@ -478,8 +314,9 @@ ipcMain.handle('set-overlay-arranging', (_event, enable) => {
 
 /**
  * Overlay size: zooms its page (the zoom stays on this window, checked with Electron 33: the main window, same
- * origin, keeps 100%) and resizes the window by the same factor, top-right corner in place, so that the empty part
- * of a bigger window does not catch the clicks meant for the game. A window the player resized keeps its proportions.
+ * origin, keeps 100%) and resizes the window by the same factor, so that the empty part of a bigger window does not
+ * catch the clicks meant for the game. A window the player resized keeps its proportions. Wayland does not let a
+ * window move itself: the top-left corner stays in place.
  */
 function setOverlayScale(scale) {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
@@ -488,34 +325,28 @@ function setOverlayScale(scale) {
   overlayScale = next;
   overlayWindow.webContents.setZoomFactor(next);
   if (Math.abs(ratio - 1) < 0.01) return;
-  const bounds = overlayWindow.getBounds();
-  const width = Math.round(bounds.width * ratio);
-  const height = Math.round(bounds.height * ratio);
-  overlayWindow.setBounds({ x: bounds.x + bounds.width - width, y: bounds.y, width, height });
+  const [width, height] = overlayWindow.getSize();
+  overlayWindow.setSize(Math.round(width * ratio), Math.round(height * ratio));
 }
 
 /**
- * Resizing from the ↙ corner of the overlay (arrange mode). Its window edges cannot be grabbed: they are in the 8 px
- * transparent margin around the panel, which lets clicks through to the window behind (measured). The renderer sends
- * start / move / end while it holds the pointer; the size comes from the cursor, top-right corner in place.
+ * Resizing from the ↘ corner of the overlay (arrange mode). Its window edges cannot be grabbed: they are in the 8 px
+ * transparent margin around the panel. Wayland gives no global cursor position: the renderer sends how far the
+ * pointer moved since it pressed the corner (its top-left corner does not move), top-left corner in place.
  */
 let overlayResizeStart = null;
 const OVERLAY_MIN_SIZE = { width: 240, height: 220 };
 
-ipcMain.on('overlay-resize', (event, phase) => {
+ipcMain.on('overlay-resize', (event, phase, dx, dy) => {
   if (!overlayWindow || overlayWindow.isDestroyed() || event.sender !== overlayWindow.webContents) return;
   if (phase === 'start') {
-    overlayResizeStart = { cursor: screen.getCursorScreenPoint(), bounds: overlayWindow.getBounds() };
-  } else if (phase === 'move' && overlayResizeStart) {
-    const { cursor, bounds } = overlayResizeStart;
-    const now = screen.getCursorScreenPoint();
-    const area = screen.getDisplayMatching(bounds).workArea;
-    const right = bounds.x + bounds.width;
-    const width = Math.round(Math.min(right - area.x, Math.max(OVERLAY_MIN_SIZE.width, bounds.width - (now.x - cursor.x))));
-    const height = Math.round(
-      Math.min(area.y + area.height - bounds.y, Math.max(OVERLAY_MIN_SIZE.height, bounds.height + (now.y - cursor.y)))
+    overlayResizeStart = overlayWindow.getSize();
+  } else if (phase === 'move' && overlayResizeStart && Number.isFinite(dx) && Number.isFinite(dy)) {
+    const [width, height] = overlayResizeStart;
+    overlayWindow.setSize(
+      Math.round(Math.max(OVERLAY_MIN_SIZE.width, width + dx)),
+      Math.round(Math.max(OVERLAY_MIN_SIZE.height, height + dy))
     );
-    overlayWindow.setBounds({ x: right - width, y: bounds.y, width, height });
   } else {
     overlayResizeStart = null;
   }
@@ -533,8 +364,8 @@ ipcMain.handle('copy-text', (_event, text) => {
   return true;
 });
 
-// Match logs (src/services/matchLogger.ts): one folder per game under %APPDATA%\deadlock-tactical-autobuild\
-// match-logs\, with journal.log (what the scanner saw and what the app decided) and images\ (HUD crops
+// Match logs (src/services/matchLogger.ts): one folder per game under ~/.config/deadlock-tactical-autobuild/
+// match-logs/, with journal.log (what the scanner saw and what the app decided) and images\ (HUD crops
 // every 2 s, full frame every minute) so that a game can be replayed and the scanner re-calibrated afterwards.
 const MATCH_LOGS_KEPT = 5;
 let matchLogDir = null;
@@ -633,6 +464,16 @@ function reportImages(dir) {
   );
 }
 
+/** PRETTY_NAME of /etc/os-release ("CachyOS", "Fedora Linux 43"…). */
+function linuxDistro() {
+  try {
+    const match = fs.readFileSync('/etc/os-release', 'utf8').match(/^PRETTY_NAME="?([^"\n]*)"?$/m);
+    return match ? match[1] : 'Linux';
+  } catch {
+    return 'Linux';
+  }
+}
+
 ipcMain.handle('create-problem-report', (_event, payload) => {
   const { info = '', state = '', includeLog = false } = payload || {};
   const now = new Date();
@@ -641,8 +482,10 @@ ipcMain.handle('create-problem-report', (_event, payload) => {
     now.getMinutes()
   )}`;
   const system = [
-    `Deadlock Blueprint ${app.getVersion()}${isPortable ? ' (portable)' : app.isPackaged ? ' (installed)' : ' (dev)'}`,
-    `Windows ${os.release()} ${os.arch()} — Electron ${process.versions.electron}, Chrome ${process.versions.chrome}`,
+    `Deadlock Blueprint ${app.getVersion()}${isAppImage ? ' (AppImage)' : app.isPackaged ? ' (packaged)' : ' (dev)'}`,
+    `${linuxDistro()} — Linux ${os.release()} ${os.arch()}, ${process.env.XDG_SESSION_TYPE || '?'} session, ${
+      process.env.XDG_CURRENT_DESKTOP || '?'
+    } — Electron ${process.versions.electron}, Chrome ${process.versions.chrome}`,
     `Displays: ${screen
       .getAllDisplays()
       .map((d) => {
@@ -689,14 +532,13 @@ ipcMain.handle('open-external', (_event, url) => {
 
 ipcMain.handle('get-app-info', () => ({
   version: app.getVersion(),
-  isPortable,
   isPackaged: app.isPackaged,
   canAutoUpdate: canAutoUpdate(),
   repoUrl: REPO_URL,
 }));
 
-// Updates. Installed version: electron-updater downloads the new version from the GitHub release and installs
-// it on restart. Portable version and development: only a notice with a link to the release page.
+// Updates. AppImage: electron-updater downloads the new AppImage from the GitHub release (latest-linux.yml) and
+// replaces the file on restart. Other runs (development, unpacked): only a notice with a link to the release page.
 let updateStatus = { state: 'idle' };
 
 function sendUpdateStatus(status) {

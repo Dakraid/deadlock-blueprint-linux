@@ -425,30 +425,44 @@ function contrastImageForOcr(data: Uint8ClampedArray, w: number, h: number, scal
   const background = sorted[Math.floor(sorted.length / 2)];
   const text = sorted[Math.floor(sorted.length * 0.97)];
   if (text - background < 40) return null; // no text on the box
-  const small = document.createElement('canvas');
-  small.width = w;
-  small.height = h;
-  const smallCtx = small.getContext('2d');
-  if (!smallCtx) return null;
-  const out = smallCtx.createImageData(w, h);
-  for (let i = 0; i < w * h; i++) {
-    const v = Math.min(1, Math.max(0, (lum[i] - background) / (text - background)));
-    const grey = Math.round(255 * (1 - v));
-    out.data[i * 4] = out.data[i * 4 + 1] = out.data[i * 4 + 2] = grey;
-    out.data[i * 4 + 3] = 255;
-  }
-  smallCtx.putImageData(out, 0, 0);
+  const grey = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) grey[i] = 255 * (1 - Math.min(1, Math.max(0, (lum[i] - background) / (text - background))));
+  // Scaled up here, not by drawImage: Chromium's smoothing filter changed between versions (Electron 33 -> 45 read
+  // 7:09 as 7:00), and the OCR must see the same pixels everywhere. Bicubic (Catmull-Rom), clamped at the edges.
   const pad = 16;
   const canvas = document.createElement('canvas');
   canvas.width = w * scale + pad * 2;
   canvas.height = h * scale + pad * 2;
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(small, pad, pad, w * scale, h * scale);
+  const out = ctx.createImageData(canvas.width, canvas.height);
+  out.data.fill(255);
+  const at = (x: number, y: number) => grey[Math.min(h - 1, Math.max(0, y)) * w + Math.min(w - 1, Math.max(0, x))];
+  const weights = (t: number) => [
+    ((-t + 2) * t - 1) * t * 0.5,
+    ((3 * t - 5) * t * t + 2) * 0.5,
+    ((-3 * t + 4) * t + 1) * t * 0.5,
+    (t - 1) * t * t * 0.5,
+  ];
+  for (let oy = 0; oy < h * scale; oy++) {
+    const sy = (oy + 0.5) / scale - 0.5;
+    const y0 = Math.floor(sy);
+    const wy = weights(sy - y0);
+    for (let ox = 0; ox < w * scale; ox++) {
+      const sx = (ox + 0.5) / scale - 0.5;
+      const x0 = Math.floor(sx);
+      const wx = weights(sx - x0);
+      let v = 0;
+      for (let j = 0; j < 4; j++) {
+        let row = 0;
+        for (let i = 0; i < 4; i++) row += wx[i] * at(x0 - 1 + i, y0 - 1 + j);
+        v += wy[j] * row;
+      }
+      const o = ((oy + pad) * canvas.width + ox + pad) * 4;
+      out.data[o] = out.data[o + 1] = out.data[o + 2] = Math.round(Math.min(255, Math.max(0, v)));
+    }
+  }
+  ctx.putImageData(out, 0, 0);
   return canvas.toDataURL('image/png');
 }
 

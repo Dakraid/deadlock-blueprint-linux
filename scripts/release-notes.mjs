@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Release notes of a GitHub release (.github/workflows/release.yml): the CHANGELOG.md section of the version,
-// the downloads, their SHA-256 checksums and VirusTotal links.
+// the downloads and their SHA-256 checksums.
 //   node scripts/release-notes.mjs v1.4.0 > release/notes.md   (after `npm run dist` and release/SHA256SUMS.txt)
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,20 +31,18 @@ const checksums = fs.existsSync(sums)
       .map(([hash, file]) => ({ hash, file }))
   : [];
 
-const describe = () => 'Portable — one file (`.exe`), no install';
-
 const lines = [];
 if (section) lines.push(section, '');
-lines.push('## Download', '', '| File | | SHA-256 | Scan |', '| :--- | :--- | :--- | :--- |');
+lines.push('## Download', '', '| File | | SHA-256 |', '| :--- | :--- | :--- |');
 for (const { hash, file } of checksums) {
-  lines.push(`| \`${file}\` | ${describe(file)} | \`${hash}\` | [VirusTotal](https://www.virustotal.com/gui/file/${hash}) |`);
+  lines.push(`| \`${file}\` | AppImage — one file, no install (Linux x64, Wayland) | \`${hash}\` |`);
 }
 lines.push(
   '',
   `Built from this tag by [GitHub Actions](${REPO}/actions/workflows/release.yml): anyone can check what went into it.`,
   '',
   '> [!NOTE]',
-  '> The executable is not code-signed: Windows SmartScreen may say "Windows protected your PC". Click **More info**, then **Run anyway**. To check your download, compare its SHA-256 (`Get-FileHash .\\<file>.exe` in PowerShell) with the table above. If VirusTotal shows "not found", upload the file there yourself: the checksum must match.',
+  '> Make the file executable (`chmod +x <file>.AppImage`) and run it. To check your download, compare `sha256sum <file>.AppImage` with the table above. The KDE window rule for the overlay is in the repository: `linux/deadlock-blueprint.kwinrule`.',
   '',
   `The app only reads the image of the game window (like OBS): no memory reading, no injection, no simulated input. See [Can I get banned?](${REPO}#can-i-get-banned).`
 );

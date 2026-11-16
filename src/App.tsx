@@ -71,8 +71,14 @@ import {
   restartMatchLog,
   setMatchLogEnabled,
 } from './services/matchLogger';
-import { grabGameFrame, releaseGameFrame } from './services/screenCapture';
-import type { AppInfo, ElectronSourceInfo, UpdateStatus } from './electron';
+import {
+  getCaptureState,
+  grabGameFrame,
+  onCaptureStateChange,
+  releaseGameFrame,
+  requestCapturePick,
+} from './services/screenCapture';
+import type { AppInfo, UpdateStatus } from './electron';
 import { ItemCard } from './components/ItemCard';
 import { InvestmentLine, SpikeChip } from './components/InvestmentLine';
 import { HeroPortraitIcon, ItemArtworkIcon, PowerIcon } from './components/DeadlockIcons';
@@ -427,8 +433,9 @@ export function App() {
   const [autoScanEnabled, setAutoScanEnabled] = useState<boolean>(!isDedicatedOverlayWindow);
   const [lastCaptureUrl, setLastCaptureUrl] = useState<string | null>(null);
   const [lastDetection, setLastDetection] = useState<VisionDetectionResult | null>(null);
-  const [sources, setSources] = useState<ElectronSourceInfo[]>([]);
-  const [selectedSourceId, setSelectedSourceId] = useState<string>('');
+  // Portal capture: picked once per launch, chosen again by the player after a cancel or a closed window
+  const [captureState, setCaptureState] = useState(getCaptureState);
+  useEffect(() => onCaptureStateChange(setCaptureState), []);
   // Capture the scanner is not calibrated for (paused), or Deadlock captured without any HUD for a long time
   const [formatIssue, setFormatIssue] = useState<{ width: number; height: number } | null>(null);
   const [hudMissing, setHudMissing] = useState(false);
@@ -753,6 +760,8 @@ export function App() {
 
   const manuallyExcludedRef = useRef<Set<string>>(new Set());
   const isScanningRef = useRef<boolean>(false);
+  // Overlay: where the pointer pressed its resize corner
+  const resizeOriginRef = useRef<{ x: number; y: number } | null>(null);
   // Decisions taken from each scan (services/matchTracker.ts), and the latest state it reads: the scan loop
   // does not re-subscribe on every change, and a scan right after another must see its result
   const trackerRef = useRef(new MatchTracker());
@@ -950,18 +959,12 @@ export function App() {
     localStorage.setItem(UI_SCALE_KEY, uiScale);
   }, [uiScale, isDedicatedOverlayWindow]);
 
-  const refreshSources = useCallback(async () => {
-    if (!window.electronAPI) return;
-    const list = await window.electronAPI.getSources();
-    setSources(list);
-  }, []);
-
   const performScreenScan = useCallback(async () => {
     if (isScanningRef.current) return;
     isScanningRef.current = true;
     try {
       if (!window.electronAPI) return;
-      const frame = await grabGameFrame(selectedSourceId);
+      const frame = await grabGameFrame();
       if (!frame) return;
       if (isDiagnosticsOpen) setLastCaptureUrl(frameToPreviewUrl(frame.image));
       let detection: VisionDetectionResult;
@@ -998,7 +1001,7 @@ export function App() {
     } finally {
       isScanningRef.current = false;
     }
-  }, [selectedSourceId, buildItemIds, isDiagnosticsOpen, applyMatchUpdate]);
+  }, [buildItemIds, isDiagnosticsOpen, applyMatchUpdate]);
 
   // Run initial scan + ultra-fast silent background scan every 350ms (near-instantaneous item updates)
   useEffect(() => {
@@ -1020,7 +1023,6 @@ export function App() {
 
   useEffect(() => {
     if (!window.electronAPI) return;
-    refreshSources();
     const unsubOverlay = window.electronAPI.onOverlayStateChanged((state) => {
       setIsOverlayMode(state.isOverlayMode);
       setIsClickThrough(state.isClickThrough);
@@ -1035,7 +1037,7 @@ export function App() {
       unsubOverlay();
       unsubScan();
     };
-  }, [isDedicatedOverlayWindow, performScreenScan, refreshSources]);
+  }, [isDedicatedOverlayWindow, performScreenScan]);
 
   // Version and update notices (main window only)
   useEffect(() => {
@@ -1098,7 +1100,7 @@ export function App() {
         hudMissing ? ' (no HUD found)' : ''
       }`,
       d
-        ? `Last scan (${d.isDeadlockWindow ? 'Deadlock window' : d.sourceName}): ${
+        ? `Last scan (${d.sourceName}): ${
             d.shopOpen ? 'shop' : d.hudVisible ? 'HUD' : 'no HUD'
           }, allies [${(d.allySlots ?? []).map((id) => id ?? '?').join(',')}] enemies [${(d.enemySlots ?? [])
             .map((id) => id ?? '?')
@@ -1402,16 +1404,20 @@ export function App() {
                 title={t('overlay.resizeTitle')}
                 onPointerDown={(e) => {
                   e.currentTarget.setPointerCapture(e.pointerId);
+                  resizeOriginRef.current = { x: e.clientX, y: e.clientY };
                   window.electronAPI?.overlayResize('start');
                 }}
                 onPointerMove={(e) => {
-                  if (e.currentTarget.hasPointerCapture(e.pointerId)) window.electronAPI?.overlayResize('move');
+                  // The window's top-left corner stays in place: client coordinates measure the drag
+                  const origin = resizeOriginRef.current;
+                  if (origin && e.currentTarget.hasPointerCapture(e.pointerId))
+                    window.electronAPI?.overlayResize('move', e.clientX - origin.x, e.clientY - origin.y);
                 }}
                 onPointerUp={() => window.electronAPI?.overlayResize('end')}
                 onLostPointerCapture={() => window.electronAPI?.overlayResize('end')}
-                className="no-drag absolute bottom-0 left-0 z-10 w-6 h-6 cursor-nesw-resize flex items-end justify-start p-1"
+                className="no-drag absolute bottom-0 right-0 z-10 w-6 h-6 cursor-nwse-resize flex items-end justify-end p-1"
               >
-                <div className="w-3 h-3 border-l-2 border-b-2 border-accent-400 rounded-bl" />
+                <div className="w-3 h-3 border-r-2 border-b-2 border-accent-400 rounded-br" />
               </div>
             )}
             <div className="drag-region px-3 py-2 bg-gradient-to-r from-accent-950/80 via-surface-panel to-surface-panel border-b border-bone/10 flex items-center justify-between">
@@ -1582,6 +1588,7 @@ export function App() {
     !updateDismissed && (updateStatus.state === 'available' || updateStatus.state === 'ready');
   // The normal scan is paused on the Street Brawl tab and never reads its 4v4 HUD: its warning does not apply there
   const showHudMissing = hudMissing && activeTab !== 'streetBrawl';
+  const showCaptureStopped = captureState === 'stopped';
   /** The hero the Street Brawl tab read from its ability icons: selected like a hand pick, without locking it. */
   const selectHeroFromStreetBrawl = (heroId: string) => {
     setMyHeroId(heroId);
@@ -1917,7 +1924,7 @@ export function App() {
         </div>
 
         {/* Notices: update available, unsupported screen format, HUD never found */}
-        {(showUpdateBanner || formatIssue || showHudMissing) && (
+        {(showUpdateBanner || formatIssue || showHudMissing || showCaptureStopped) && (
           <div className="px-3 pt-2 space-y-2 shrink-0">
             {showUpdateBanner && (
               <div className="max-w-screen-2xl mx-auto px-3 py-2 rounded-xl bg-good-950/60 border border-good-500/50 flex items-center justify-between gap-2 flex-wrap text-body">
@@ -1955,6 +1962,19 @@ export function App() {
                 </div>
                 <Button size="sm" className="shrink-0" onClick={() => setIsReportOpen(true)}>
                   {t('resolution.report')}
+                </Button>
+              </div>
+            )}
+            {showCaptureStopped && (
+              <div className="max-w-screen-2xl mx-auto px-3 py-2 rounded-xl bg-accent-950/50 border border-accent-500/40 flex items-center justify-between gap-2 flex-wrap text-small text-accent-100">
+                <span className="flex items-start gap-2">
+                  <MonitorX className="w-4 h-4 text-accent-300 shrink-0" />
+                  <span>
+                    <strong>{t('capture.stoppedTitle')}.</strong> {t('capture.stoppedBody')}
+                  </span>
+                </span>
+                <Button size="sm" variant="primary" onClick={requestCapturePick}>
+                  {t('capture.choose')}
                 </Button>
               </div>
             )}
@@ -2389,7 +2409,6 @@ export function App() {
                 heroId={myHeroId}
                 heroName={myHero.name}
                 lang={lang}
-                sourceId={selectedSourceId}
                 onHeroDetected={selectHeroFromStreetBrawl}
               />
             )}
@@ -2398,16 +2417,9 @@ export function App() {
             {activeTab === 'logs' && (
               <DiagnosticsTab
                 heroes={HEROES}
-                sources={sources}
-                selectedSourceId={selectedSourceId}
-                onSelectSource={(id) => {
-                  setSelectedSourceId(id);
-                  refreshSources();
-                }}
-                onScanNow={() => {
-                  refreshSources();
-                  performScreenScan();
-                }}
+                captureState={captureState}
+                onChooseCapture={requestCapturePick}
+                onScanNow={performScreenScan}
                 onReport={() => setIsReportOpen(true)}
                 lastCaptureUrl={lastCaptureUrl}
                 lastDetection={lastDetection}

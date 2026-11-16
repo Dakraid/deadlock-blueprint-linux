@@ -1,29 +1,7 @@
-export interface ElectronSourceInfo {
-  id: string;
-  name: string;
-  type: 'screen' | 'window';
-  width?: number;
-  height?: number;
-  preview?: string;
-}
-
-export interface CaptureScreenResponse {
-  success: boolean;
-  error?: string;
-  sourceName?: string;
-  sourceId?: string;
-  isDeadlockWindow?: boolean;
-  width?: number;
-  height?: number;
-  dataUrl?: string;
-  availableSources?: ElectronSourceInfo[];
-}
-
-/** Source picked by the main process for the live capture stream (no thumbnail taken). */
+/** Window or screen the player chose in the xdg-desktop-portal picker, for the live capture stream. */
 export interface CaptureSourceInfo {
   id: string;
   sourceName: string;
-  isDeadlockWindow: boolean;
 }
 
 export interface OverlayState {
@@ -35,7 +13,6 @@ export interface OverlayState {
 
 export interface AppInfo {
   version: string;
-  isPortable: boolean;
   isPackaged: boolean;
   canAutoUpdate: boolean;
   repoUrl: string;
@@ -43,8 +20,8 @@ export interface AppInfo {
 
 export type UpdateStatus =
   | { state: 'idle' | 'checking' | 'none' }
-  | { state: 'available'; version: string; url: string } // portable / development: download it by hand
-  | { state: 'downloading' | 'ready'; version: string } // installed version: electron-updater
+  | { state: 'available'; version: string; url: string } // not an AppImage: download it by hand
+  | { state: 'downloading' | 'ready'; version: string } // AppImage: electron-updater
   | { state: 'error'; message: string };
 
 export interface ProblemReportResult {
@@ -56,15 +33,14 @@ export interface ProblemReportResult {
 declare global {
   interface Window {
     electronAPI?: {
-      findCaptureSource: (preferredSourceId?: string) => Promise<CaptureSourceInfo | null>;
-      captureScreen: (preferredSourceId?: string) => Promise<CaptureScreenResponse>;
-      getSources: () => Promise<ElectronSourceInfo[]>;
+      /** Opens the xdg-desktop-portal picker (window or screen); null if cancelled. */
+      pickCaptureSource: () => Promise<CaptureSourceInfo | null>;
       setOverlayMode: (enable?: boolean) => Promise<OverlayState>;
       setClickThrough: (enable?: boolean) => Promise<OverlayState>;
       /** Arrange mode: the overlay takes the focus until it is turned off or the game is clicked. */
       setOverlayArranging: (enable: boolean) => Promise<OverlayState>;
-      /** Overlay window only: resizing from its ↙ corner, the size comes from the cursor (main process). */
-      overlayResize: (phase: 'start' | 'move' | 'end') => void;
+      /** Overlay window only: resizing from its ↘ corner, by how far the pointer moved since 'start'. */
+      overlayResize: (phase: 'start' | 'move' | 'end', dx?: number, dy?: number) => void;
       /** Overlay window only: zoom of its page, its window resized by the same factor. */
       setOverlayScale: (scale: number) => Promise<number>;
       /** Writes to the clipboard (item name for the shop search). */

@@ -2,7 +2,7 @@
  * Journal de partie : ce que le scanner a vu et ce que l'application en a déduit, pour analyser une partie après
  * coup et recalibrer le scanner sur de vraies images.
  *
- * Un dossier par partie (les 5 dernières sont gardées) dans %APPDATA%\deadlock-tactical-autobuild\match-logs\ :
+ * Un dossier par partie (les 5 dernières sont gardées) dans ~/.config/deadlock-tactical-autobuild/match-logs/ :
  * - `journal.log` : une ligne SCAN à chaque changement de ce que voit le scanner (mode HUD / boutique, héros, âmes,
  *   état des 12 slots avec l'erreur de reconnaissance), et les lignes ÉTAT / RECO / ÉVÉNEMENT de l'application ;
  * - `images\` : coin inventaire (`inv_*.jpg`, x 0..420, y 820..1080) et cases de score (`top_*.jpg`, x 840..1080,

@@ -1,0 +1,18 @@
+[Deadlock Blueprint overlay]
+Description=Deadlock Blueprint overlay: above the fullscreen game, never takes the focus
+title=Deadlock Blueprint Overlay
+titlematch=1
+wmclass=com.vandicta.deadlock-blueprint
+wmclassmatch=1
+wmclasscomplete=false
+layer=overlay
+layerrule=2
+acceptfocus=false
+acceptfocusrule=2
+skiptaskbar=true
+skiptaskbarrule=2
+skipswitcher=true
+skipswitcherrule=2
+skippager=true
+skippagerrule=2
+positionrule=4

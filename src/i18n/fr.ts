@@ -214,15 +214,20 @@ export const MESSAGES_FR = {
   // Diagnostic
   'diag.title': "Diagnostic & Choix de l'Écran",
   'diag.scanNow': 'Scanner Maintenant',
-  'diag.target': 'Écran cible :',
-  'diag.auto': '🎯 Auto (fenêtre Deadlock, sinon écran principal)',
-  'diag.screen': (name: string, w: number, h: number) => `🖥️ ${name} — ${w}x${h}`,
+  'diag.target': 'Capture :',
+  'capture.choose': 'Choisir la fenêtre Deadlock',
+  'capture.state.idle': 'Pas encore choisie',
+  'capture.state.picking': 'Choix en cours dans la fenêtre du système…',
+  'capture.state.live': 'En cours',
+  'capture.state.stopped': 'Arrêtée',
+  'capture.stoppedTitle': 'Capture arrêtée',
+  'capture.stoppedBody':
+    'Choix annulé ou fenêtre fermée : choisis la fenêtre Deadlock (ou son écran) dans la fenêtre de partage du système pour reprendre la détection.',
   'diag.captured': 'Écran capturé',
   'diag.hud': 'HUD analysé',
   'diag.noScan': 'Aucun scan effectué',
   'diag.waiting': 'En attente de capture...',
   'diag.source': 'Source analysée',
-  'diag.gameWindow': (name: string) => `Jeu : ${name}`,
   'diag.frame': 'Image capturée',
   'diag.mode': 'Écran reconnu',
   'diag.mode.hud': 'HUD de partie',
@@ -258,7 +263,7 @@ export const MESSAGES_FR = {
   'update.checking': 'Recherche…',
   'update.upToDate': 'Tu as la dernière version.',
   'update.failed': 'Impossible de vérifier les mises à jour (hors ligne ?).',
-  'update.portable': 'Version portable : télécharge la nouvelle version sur GitHub.',
+  'update.portable': 'Télécharge la nouvelle version sur GitHub.',
 
   // Réglages
   'settings.title': 'Réglages',

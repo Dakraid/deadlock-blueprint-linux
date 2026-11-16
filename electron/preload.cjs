@@ -1,13 +1,11 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  findCaptureSource: (preferredSourceId) => ipcRenderer.invoke('find-capture-source', preferredSourceId),
-  captureScreen: (preferredSourceId) => ipcRenderer.invoke('capture-screen', preferredSourceId),
-  getSources: () => ipcRenderer.invoke('get-sources'),
+  pickCaptureSource: () => ipcRenderer.invoke('pick-capture-source'),
   setOverlayMode: (enable) => ipcRenderer.invoke('set-overlay-mode', enable),
   setClickThrough: (enable) => ipcRenderer.invoke('set-click-through', enable),
   setOverlayArranging: (enable) => ipcRenderer.invoke('set-overlay-arranging', enable),
-  overlayResize: (phase) => ipcRenderer.send('overlay-resize', phase),
+  overlayResize: (phase, dx, dy) => ipcRenderer.send('overlay-resize', phase, dx, dy),
   setOverlayScale: (scale) => ipcRenderer.invoke('set-overlay-scale', scale),
   copyText: (text) => ipcRenderer.invoke('copy-text', text),
   windowControl: (action) => ipcRenderer.invoke('window-control', action),

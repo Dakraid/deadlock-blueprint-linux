@@ -5,7 +5,7 @@
 //       Regression test: tests/vision/cases.json lists frames and what the scanner must read in each one (only the
 //       fields given are compared). Exit code 1 on any difference. `npm run test:vision`.
 //
-//   electron scripts/vision-replay.cjs --log "%APPDATA%\deadlock-tactical-autobuild\match-logs\partie_…" [--hero id]
+//   electron scripts/vision-replay.cjs --log ~/.config/deadlock-tactical-autobuild/match-logs/partie_… [--hero id]
 //       [--crops] [--sequential] [--out results.json]
 //       Recalibration: what the scanner reads on every full frame of a game log (one per minute), or with --crops on
 //       every inventory + score-box crop pair (every 2 s, no portraits). Prints one line per frame.
