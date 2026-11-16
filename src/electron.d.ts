@@ -2,6 +2,8 @@
 export interface CaptureSourceInfo {
   id: string;
   sourceName: string;
+  /** KDE: the frames come back with KWin's screencast curve, undone before the scanner reads them. */
+  kwinGamma: boolean;
 }
 
 export interface OverlayState {

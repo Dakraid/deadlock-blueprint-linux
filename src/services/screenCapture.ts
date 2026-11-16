@@ -39,6 +39,40 @@ const GRAB_TIMEOUT_MS = 1500;
 const MAX_CAPTURE_WIDTH = 2560;
 const MAX_CAPTURE_HEIGHT = 1600;
 
+/**
+ * KWin's screencast returns what a window drew in sRGB as sRGB-decoded then gamma-2.2-encoded values: darks lifted
+ * (17 -> 24, 34 -> 40, 51 -> 54), mid-tones and highlights within 2 (measured on Plasma 6.8 with a pattern of known
+ * colours, HDR output at 1000 nits SDR brightness and SDR output alike: no HDR-specific change). Applied to the
+ * vision test frames, it broke 5 of 33 readings (Haze read as Paradox, souls read on an empty counter); this inverse
+ * restores 33/33.
+ */
+export const KWIN_GAMMA_INVERSE = Uint8Array.from({ length: 256 }, (_, v) => {
+  const linear = (v / 255) ** 2.2;
+  const srgb = linear <= 0.0031308 ? 12.92 * linear : 1.055 * linear ** (1 / 2.4) - 0.055;
+  return Math.min(255, Math.round(255 * srgb));
+});
+
+let correctionCanvas: OffscreenCanvas | null = null;
+
+/** The frame with every channel through `lut` (one pass over its pixels); the input frame is closed. */
+function applyLut(bitmap: ImageBitmap, lut: Uint8Array): ImageBitmap {
+  if (!correctionCanvas || correctionCanvas.width !== bitmap.width || correctionCanvas.height !== bitmap.height) {
+    correctionCanvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+  }
+  const ctx = correctionCanvas.getContext('2d', { willReadFrequently: true })!;
+  ctx.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  const image = ctx.getImageData(0, 0, correctionCanvas.width, correctionCanvas.height);
+  const data = image.data;
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = lut[data[i]];
+    data[i + 1] = lut[data[i + 1]];
+    data[i + 2] = lut[data[i + 2]];
+  }
+  ctx.putImageData(image, 0, 0);
+  return correctionCanvas.transferToImageBitmap();
+}
+
 let stream: MediaStream | null = null;
 let grabber: FrameGrabber | null = null;
 let activeSource: CaptureSourceInfo | null = null;
@@ -150,9 +184,11 @@ export async function grabGameFrame(): Promise<GameFrame | null> {
   if (state === 'idle') requestCapturePick();
   const source = activeSource;
   if (state !== 'live' || !grabber || !source) return null;
-  const bitmap = await grabWithTimeout(grabber);
+  const grabbed = await grabWithTimeout(grabber);
+  if (!grabbed) return null;
+  const bitmap = source.kwinGamma ? applyLut(grabbed, KWIN_GAMMA_INVERSE) : grabbed;
   // The portal hides window titles: what the player picked is taken as the game (format checks, "no HUD" hint)
-  return bitmap ? { image: bitmap, sourceName: source.sourceName, isDeadlockWindow: true } : null;
+  return { image: bitmap, sourceName: source.sourceName, isDeadlockWindow: true };
 }
 
 /** Releases a frame once analysed (live frames hold ~8 MB until closed). */

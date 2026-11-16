@@ -291,7 +291,9 @@ ipcMain.handle('pick-capture-source', async () => {
       fetchWindowIcons: false,
     });
     const source = sources[0];
-    return source ? { id: source.id, sourceName: source.name || source.id } : null;
+    // KWin's screencast curve (measured on Plasma 6.8, HDR and SDR outputs alike): undone in screenCapture.ts
+    const kwinGamma = /kde/i.test(process.env.XDG_CURRENT_DESKTOP || '');
+    return source ? { id: source.id, sourceName: source.name || source.id, kwinGamma } : null;
   } catch {
     return null;
   }
