@@ -1,6 +1,6 @@
 /**
- * A published in-game build imported from deadlock-api.com by its id or by searching its name: the author's item
- * order and optional categories, for the "My build" buy mode (services/buyQueue.ts › computeBuildOrderQueue).
+ * A published in-game build imported from deadlock-api.com by its id or by searching its name, or a build code
+ * copied in the game and pasted: the author's item order and optional categories, for the "My build" buy mode (services/buyQueue.ts › computeBuildOrderQueue).
  * Saved per hero in localStorage (dl_importedBuilds, shared with the overlay), fetched only when the player asks.
  */
 import type { HeroBuildArchetype } from '../data/deadlockData';
@@ -23,6 +23,8 @@ export interface ImportedBuild {
   buildId: number;
   version: number;
   name: string;
+  /** Pasted build code: its build id is the copy's local id, so it is never fetched again ("Update"). */
+  pasted?: boolean;
   phases: HeroBuildArchetype['phases'];
 }
 
@@ -74,6 +76,72 @@ export function phasesFromApiBuild(
   const mid = cut(MID_FROM_SOULS);
   const late = cut(LATE_FROM_SOULS);
   return { early: required.slice(0, mid), mid: required.slice(mid, late), late: required.slice(late), situational };
+}
+
+/** Every zstd frame starts with 28 B5 2F FD, "KLUv/" in base64: a pasted build code, not an id or a name. */
+export const isBuildCode = (text: string) => /^KLUv\/[A-Za-z0-9+/]+=*$/.test(text.replace(/\s+/g, ''));
+
+type ProtoValue = number | Uint8Array;
+
+/** The fields of a protobuf message. Varints by multiplication: item ids go past 2^31, `|` and `<<` made them negative. */
+function* protoFields(bytes: Uint8Array): Generator<[number, ProtoValue]> {
+  let pos = 0;
+  const varint = () => {
+    let value = 0;
+    for (let shift = 0; ; shift += 7) {
+      if (pos >= bytes.length || shift > 63) throw new Error('bad varint');
+      const byte = bytes[pos++];
+      value += (byte & 0x7f) * 2 ** shift;
+      if (byte < 0x80) return value;
+    }
+  };
+  while (pos < bytes.length) {
+    const key = varint();
+    const wire = key % 8;
+    if (wire === 0) yield [Math.floor(key / 8), varint()];
+    else if (wire === 2) {
+      const length = varint();
+      if (pos + length > bytes.length) throw new Error('truncated');
+      yield [Math.floor(key / 8), bytes.subarray(pos, (pos += length))];
+    } else if (wire === 1 || wire === 5) pos += wire === 1 ? 8 : 4; // fixed64, fixed32 (category width / height)
+    else throw new Error(`wire type ${wire}`);
+  }
+  if (pos > bytes.length) throw new Error('truncated');
+}
+
+const isBytes = (value: ProtoValue): value is Uint8Array => typeof value !== 'number';
+
+/**
+ * A build code copied in the game, once main.cjs › decode-build-code has undone base64 and zstd: Valve's
+ * CMsgHeroBuild protobuf, read into the fields deadlock-api returns as JSON (same field numbers: 1 hero_build_id,
+ * 2 hero_id, 5 name, 8 version, 10 details › 1 mod_categories › 1 mods › 1 ability_id, 2 name, 6 optional).
+ */
+export function parseHeroBuild(bytes: Uint8Array): ApiHeroBuild {
+  const text = (value: Uint8Array) => new TextDecoder().decode(value);
+  const categories: NonNullable<NonNullable<ApiHeroBuild['details']>['mod_categories']> = [];
+  const build: ApiHeroBuild = { hero_id: 0, hero_build_id: 0, name: '', version: 0, details: { mod_categories: categories } };
+  for (const [no, value] of protoFields(bytes)) {
+    if (no === 1 && !isBytes(value)) build.hero_build_id = value;
+    else if (no === 2 && !isBytes(value)) build.hero_id = value;
+    else if (no === 5 && isBytes(value)) build.name = text(value);
+    else if (no === 8 && !isBytes(value)) build.version = value;
+    else if (no === 10 && isBytes(value)) {
+      for (const [n, rawCategory] of protoFields(value)) {
+        if (n !== 1 || !isBytes(rawCategory)) continue;
+        const category: (typeof categories)[number] = { mods: [] };
+        for (const [field, v] of protoFields(rawCategory)) {
+          if (field === 2 && isBytes(v)) category.name = text(v);
+          else if (field === 6 && !isBytes(v)) category.optional = v !== 0;
+          else if (field === 1 && isBytes(v)) {
+            for (const [m, id] of protoFields(v)) if (m === 1 && !isBytes(id)) category.mods!.push({ ability_id: id });
+          }
+        }
+        categories.push(category);
+      }
+    }
+  }
+  if (!build.hero_id) throw new Error('no hero');
+  return build;
 }
 
 /** Builds from deadlock-api: one by id, or the most favourited of a hero whose name contains `search`. */

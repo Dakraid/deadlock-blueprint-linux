@@ -391,6 +391,18 @@ ipcMain.handle('copy-text', (_event, text) => {
   return true;
 });
 
+// Build code pasted from the game (base64 of a zstd frame holding a CMsgHeroBuild protobuf): the renderer has no
+// zstd (DecompressionStream lacks it in Electron 45), so it is inflated here and parsed in
+// src/services/importedBuild.ts › parseBuildCode. A pasted text: capped in and out (zstd bomb).
+ipcMain.handle('decode-build-code', (_event, code) => {
+  if (typeof code !== 'string' || code.length > 65536) return null;
+  try {
+    return new Uint8Array(require('zlib').zstdDecompressSync(Buffer.from(code.replace(/\s+/g, ''), 'base64'), { maxOutputLength: 1 << 20 }));
+  } catch {
+    return null;
+  }
+});
+
 // Match logs (src/services/matchLogger.ts): one folder per game under ~/.config/deadlock-tactical-autobuild/
 // match-logs/, with journal.log (what the scanner saw and what the app decided) and images\ (HUD crops
 // every 2 s, full frame every minute) so that a game can be replayed and the scanner re-calibrated afterwards.

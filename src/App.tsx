@@ -490,7 +490,7 @@ export function App() {
     const hero = HEROES.find((h) => h.id === myHeroId) || HEROES[0];
     const imported = importedBuilds[hero.id];
     if (!imported) return hero;
-    const subtitle = t('import.subtitle', imported.buildId, imported.version);
+    const subtitle = imported.pasted ? t('import.pastedSubtitle') : t('import.subtitle', imported.buildId, imported.version);
     return { ...hero, builds: [...hero.builds, importedArchetype(imported, hero.builds[0], subtitle)] };
   }, [HEROES, myHeroId, importedBuilds, t]);
 

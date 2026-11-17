@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Download, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { ITEMS_DB, getHeroApiId, getItemIdByApiId } from '../data/deadlockData';
 import { useI18n } from '../i18n';
-import { ApiHeroBuild, ImportedBuild, fetchApiBuilds, phasesFromApiBuild } from '../services/importedBuild';
+import { ApiHeroBuild, ImportedBuild, fetchApiBuilds, isBuildCode, parseHeroBuild, phasesFromApiBuild } from '../services/importedBuild';
 import { Button } from '../ui';
 
 interface Props {
@@ -12,15 +12,19 @@ interface Props {
   onChange: (build: ImportedBuild | null) => void;
 }
 
-const toImported = (heroId: string, build: ApiHeroBuild): ImportedBuild => ({
+const toImported = (heroId: string, build: ApiHeroBuild, pasted: boolean): ImportedBuild => ({
   heroId,
+  ...(pasted && { pasted }),
   buildId: build.hero_build_id,
   version: build.version,
   name: String(build.name ?? '').trim().slice(0, 80) || `#${build.hero_build_id}`,
   phases: phasesFromApiBuild(build, getItemIdByApiId, (id) => ITEMS_DB[id]?.cost ?? 0),
 });
 
-/** Import a published build of my hero from deadlock-api.com: by its id, or by searching its name. Main window only. */
+/**
+ * Import a published build of my hero from deadlock-api.com (by its id, or by searching its name), or a build code
+ * copied in the game. Main window only.
+ */
 export const BuildImportPanel: React.FC<Props> = ({ heroId, imported, onChange }) => {
   const { t } = useI18n();
   const [query, setQuery] = useState('');
@@ -44,6 +48,18 @@ export const BuildImportPanel: React.FC<Props> = ({ heroId, imported, onChange }
   const search = () =>
     run(async () => {
       if (heroApiId === undefined) throw new Error(t('import.unknownHero'));
+      if (isBuildCode(query)) {
+        const bytes = await window.electronAPI?.decodeBuildCode(query);
+        let build: ApiHeroBuild;
+        try {
+          if (!bytes) throw new Error();
+          build = parseHeroBuild(bytes);
+        } catch {
+          throw new Error(t('import.badCode'));
+        }
+        choose(build, true);
+        return;
+      }
       const text = query.trim().replace(/^#/, '');
       const builds = /^\d+$/.test(text)
         ? await fetchApiBuilds({ buildId: Number(text) })
@@ -51,20 +67,14 @@ export const BuildImportPanel: React.FC<Props> = ({ heroId, imported, onChange }
       setResults(builds);
     });
 
-  const choose = (build: ApiHeroBuild) => {
-    if (build.hero_id !== heroApiId) {
-      setStatus('error');
-      setMessage(t('import.otherHero'));
-      return;
-    }
-    const next = toImported(heroId, build);
-    if (next.phases.early.length + next.phases.mid.length + next.phases.late.length === 0) {
-      setStatus('error');
-      setMessage(t('import.empty'));
-      return;
-    }
+  // Throws, so that run() shows the error: a status set here was reset to idle by run() right after
+  const choose = (build: ApiHeroBuild, pasted = false) => {
+    if (build.hero_id !== heroApiId) throw new Error(t('import.otherHero'));
+    const next = toImported(heroId, build, pasted);
+    if (next.phases.early.length + next.phases.mid.length + next.phases.late.length === 0) throw new Error(t('import.empty'));
     onChange(next);
     setResults(null);
+    if (pasted) setQuery('');
   };
 
   const update = () =>
@@ -81,11 +91,15 @@ export const BuildImportPanel: React.FC<Props> = ({ heroId, imported, onChange }
         <div className="flex items-center gap-2 p-2 rounded-xl bg-shade/40 border border-bone/10">
           <div className="min-w-0 flex-1">
             <p className="font-label text-body text-ink-strong truncate">{imported.name}</p>
-            <p className="text-small text-ink-muted">{t('import.subtitle', imported.buildId, imported.version)}</p>
+            <p className="text-small text-ink-muted">
+              {imported.pasted ? t('import.pastedSubtitle') : t('import.subtitle', imported.buildId, imported.version)}
+            </p>
           </div>
-          <Button size="sm" variant="ghost" icon={<RefreshCw className="w-3.5 h-3.5" />} onClick={update} disabled={status === 'loading'}>
-            {t('import.update')}
-          </Button>
+          {!imported.pasted && (
+            <Button size="sm" variant="ghost" icon={<RefreshCw className="w-3.5 h-3.5" />} onClick={update} disabled={status === 'loading'}>
+              {t('import.update')}
+            </Button>
+          )}
           <Button size="sm" variant="ghost" icon={<Trash2 className="w-3.5 h-3.5" />} onClick={() => onChange(null)}>
             {t('import.remove')}
           </Button>
@@ -122,7 +136,7 @@ export const BuildImportPanel: React.FC<Props> = ({ heroId, imported, onChange }
                 <p className="text-body text-ink-strong truncate">{build.name}</p>
                 <p className="text-small text-ink-muted">{t('import.subtitle', build.hero_build_id, build.version)}</p>
               </div>
-              <Button size="sm" variant="secondary" icon={<Download className="w-3.5 h-3.5" />} onClick={() => choose(build)}>
+              <Button size="sm" variant="secondary" icon={<Download className="w-3.5 h-3.5" />} onClick={() => run(async () => choose(build))}>
                 {t('import.use')}
               </Button>
             </li>

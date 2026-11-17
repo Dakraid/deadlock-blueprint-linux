@@ -47,6 +47,8 @@ declare global {
       setOverlayScale: (scale: number) => Promise<number>;
       /** Writes to the clipboard (item name for the shop search). */
       copyText: (text: string) => Promise<boolean>;
+      /** A build code pasted from the game, base64 then zstd undone: the protobuf bytes, or null if it is not one. */
+      decodeBuildCode: (code: string) => Promise<Uint8Array | null>;
       windowControl: (action: 'minimize' | 'maximize' | 'close') => Promise<void>;
       getAppInfo: () => Promise<AppInfo>;
       /** Opens a page of the project's GitHub repository (or deadlock-api.com) in the browser. */
