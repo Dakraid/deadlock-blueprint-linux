@@ -21,6 +21,7 @@ import {
   UserPlus,
   X,
   Zap,
+  Download,
 } from 'lucide-react';
 import {
   LaneColor,
@@ -54,7 +55,7 @@ import {
   isStaleLock,
   withLockedFirst,
 } from './services/recommendations';
-import { computeBuyQueue, getSpikeSafeSlotPlans, isLaneOver } from './services/buyQueue';
+import { BuyMode, computeBuyQueue, getSpikeSafeSlotPlans, isLaneOver } from './services/buyQueue';
 import {
   inBuyOrder,
   investmentItems,
@@ -87,6 +88,8 @@ import { SettingsModal } from './components/SettingsModal';
 import { OnboardingModal } from './components/OnboardingModal';
 import { ReportContent, ReportDialog } from './components/ReportDialog';
 import { DiagnosticsTab } from './components/DiagnosticsTab';
+import { BuildImportPanel } from './components/BuildImportPanel';
+import { importedArchetype, importedBuildId, readImportedBuilds, saveImportedBuild } from './services/importedBuild';
 import { I18nContext, makeI18n } from './i18n';
 import { Lang, detectLang, readStoredLang, storeLang } from './i18n/lang';
 // Street Brawl mode: everything lives in src/streetBrawl, the app only shows its tab
@@ -252,6 +255,12 @@ export function App() {
   const [selectedBuildId, setSelectedBuildId] = useState<string>(
     () => localStorage.getItem('dl_selectedBuildId') || ''
   );
+  // Buy queue mode (services/buyQueue.ts): 'smart' (default) or 'build' (the active build in its own order)
+  const [buyMode, setBuyMode] = useState<BuyMode>(() =>
+    localStorage.getItem('dl_buyMode') === 'build' ? 'build' : 'smart'
+  );
+  // Published builds imported from deadlock-api.com, one per hero (services/importedBuild.ts)
+  const [importedBuilds, setImportedBuilds] = useState(readImportedBuilds);
   const [laneColor, setLaneColor] = useState<LaneColor>(
     () => (localStorage.getItem('dl_laneColor') as LaneColor) || 'yellow'
   );
@@ -364,6 +373,7 @@ export function App() {
     if (!isDedicatedOverlayWindow) {
       localStorage.setItem('dl_myHeroId', myHeroId);
       localStorage.setItem('dl_selectedBuildId', selectedBuildId);
+      localStorage.setItem('dl_buyMode', buyMode);
       localStorage.setItem('dl_laneColor', laneColor);
       localStorage.setItem('dl_laneMode', laneMode);
       if (allyPartnerId) localStorage.setItem('dl_allyPartnerId', allyPartnerId);
@@ -378,6 +388,7 @@ export function App() {
     isDedicatedOverlayWindow,
     myHeroId,
     selectedBuildId,
+    buyMode,
     laneColor,
     laneMode,
     allyPartnerId,
@@ -396,6 +407,8 @@ export function App() {
       if (h) setMyHeroId(h);
       const b = localStorage.getItem('dl_selectedBuildId');
       if (b) setSelectedBuildId(b);
+      setBuyMode(localStorage.getItem('dl_buyMode') === 'build' ? 'build' : 'smart');
+      setImportedBuilds(readImportedBuilds());
       const lc = localStorage.getItem('dl_laneColor') as LaneColor;
       if (lc) setLaneColor(lc);
       const lm = localStorage.getItem('dl_laneMode') as LaneMode;
@@ -423,7 +436,7 @@ export function App() {
 
   // Navigation Tabs & Popovers
   const [activeTab, setActiveTab] = useState<MainTab>('essential');
-  const [openPopover, setOpenPopover] = useState<'myHero' | 'ally' | 'enemies' | null>(null);
+  const [openPopover, setOpenPopover] = useState<'myHero' | 'ally' | 'enemies' | 'import' | null>(null);
   const closePopover = useCallback(() => setOpenPopover(null), []);
   const [enemyPopoverMode, setEnemyPopoverMode] = useState<'lane' | 'team'>('lane');
 
@@ -473,7 +486,13 @@ export function App() {
     storeNumber(OVERLAY_SCALE_KEY, value);
   };
 
-  const myHero = useMemo(() => HEROES.find((h) => h.id === myHeroId) || HEROES[0], [HEROES, myHeroId]);
+  const myHero = useMemo(() => {
+    const hero = HEROES.find((h) => h.id === myHeroId) || HEROES[0];
+    const imported = importedBuilds[hero.id];
+    if (!imported) return hero;
+    const subtitle = t('import.subtitle', imported.buildId, imported.version);
+    return { ...hero, builds: [...hero.builds, importedArchetype(imported, hero.builds[0], subtitle)] };
+  }, [HEROES, myHeroId, importedBuilds, t]);
 
   useEffect(() => {
     if (!myHero.builds.some((b) => b.id === selectedBuildId)) {
@@ -597,8 +616,10 @@ export function App() {
         laneOver,
         soldItems,
         lateItems,
+        mode: buyMode,
       }),
     [
+      buyMode,
       activeBuild,
       tacticalPlan.priorityItems,
       tacticalPlan.matchupAlerts,
@@ -620,7 +641,7 @@ export function App() {
 
   // The #1 stays locked until it is bought or skipped (or the hero/build changes):
   // new counters or a re-ordering of the queue only affect #2 and beyond.
-  const lockKey = `${myHeroId}|${activeBuild.id}`;
+  const lockKey = `${myHeroId}|${activeBuild.id}|${buyMode}`;
   const lockedItemId = lockedNext?.key === lockKey ? lockedNext.itemId : null;
 
   useEffect(() => {
@@ -1720,9 +1741,33 @@ export function App() {
                 tone="accent"
                 value={activeBuild.id}
                 onChange={setSelectedBuildId}
-                options={myHero.builds.map((b, idx) => ({ value: b.id, label: t('build.n', idx + 1), title: `${b.name}\n${b.subtitle}` }))}
+                options={myHero.builds.map((b, idx) => ({
+                  value: b.id,
+                  label: b.id === importedBuildId(myHero.id) ? t('import.tab') : t('build.n', idx + 1),
+                  title: `${b.name}\n${b.subtitle}`,
+                }))}
               />
             )}
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<Download className="w-3.5 h-3.5" />}
+              aria-expanded={openPopover === 'import'}
+              onClick={() => setOpenPopover(openPopover === 'import' ? null : 'import')}
+            >
+              {t('import.button')}
+            </Button>
+            <SegmentedControl
+              size="sm"
+              tone="accent"
+              value={buyMode}
+              onChange={setBuyMode}
+              options={(['smart', 'build'] as const).map((mode) => ({
+                value: mode,
+                label: t(mode === 'smart' ? 'buyMode.smart' : 'buyMode.build'),
+                title: t('buyMode.help'),
+              }))}
+            />
           </div>
 
           {/* Center: Enemies Button */}
@@ -1802,6 +1847,19 @@ export function App() {
                   </PickTile>
                 ))}
               </div>
+            </PopoverPanel>
+          )}
+
+          {openPopover === 'import' && (
+            <PopoverPanel title={t('import.title')} onClose={closePopover} closeLabel={t('settings.close')}>
+              <BuildImportPanel
+                heroId={myHero.id}
+                imported={importedBuilds[myHero.id]}
+                onChange={(build) => {
+                  setImportedBuilds(saveImportedBuild(myHero.id, build));
+                  if (build) setSelectedBuildId(importedBuildId(myHero.id));
+                }}
+              />
             </PopoverPanel>
           )}
 

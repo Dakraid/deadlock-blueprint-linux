@@ -908,6 +908,7 @@ const LEGACY_ITEMS_DB: Record<string, LegacyItem> = {
 // ================= CATALOGUE GÉNÉRÉ (npm run update-builds) =================
 interface GeneratedCatalogItem {
   id: string;
+  apiId?: number; // deadlock-api item id (imported builds, services/importedBuild.ts)
   nameFr: string;
   nameEn: string;
   category: ItemCategory;
@@ -2310,6 +2311,7 @@ interface GeneratedBuild {
 }
 
 interface GeneratedHeroMeta {
+  apiHeroId?: number;
   matches: number;
   winRate: number;
   badgeMin: number;
@@ -2332,6 +2334,15 @@ interface GeneratedHeroMeta {
 
 const generatedHeroes = () =>
   (getMetaData() as unknown as { heroes: Record<string, GeneratedHeroMeta> }).heroes ?? {};
+
+/** The deadlock-api id of a hero, if the generated data knows it. */
+export const getHeroApiId = (heroId: string): number | undefined => generatedHeroes()[heroId]?.apiHeroId;
+
+/** The local item id of a deadlock-api item id (generated catalog), if the item is known. */
+export function getItemIdByApiId(apiId: number): string | undefined {
+  const items = (getCatalogData() as unknown as { items?: Record<string, GeneratedCatalogItem> }).items ?? {};
+  return Object.values(items).find((item) => item.apiId === apiId && ITEMS_DB[item.id])?.id;
+}
 
 const BADGE_LABELS: Record<number, string> = { 81: 'Oracle+', 71: 'Archon+', 51: 'Ritualist+' };
 

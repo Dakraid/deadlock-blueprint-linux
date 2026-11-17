@@ -19,6 +19,7 @@ import {
   InventoryStatus,
   QueueEntry,
   buildPurchaseOrder,
+  counterRole,
   dropAnsweredCounters,
   effectiveOwnedSet,
   getBuildItemIds,
@@ -55,7 +56,11 @@ export interface BuyQueueInput extends InventoryView {
   soldItems?: string[];
   /** Late items beyond the build, best first (getHeroLateItems): the queue goes on with them once the build runs out */
   lateItems?: string[];
+  /** 'smart' (default): the pipeline above. 'build': the active build in its own order (computeBuildOrderQueue) */
+  mode?: BuyMode;
 }
+
+export type BuyMode = 'smart' | 'build';
 
 export interface BuyQueue {
   /** What to buy, best first (before the locked #1) */
@@ -65,6 +70,7 @@ export interface BuyQueue {
 }
 
 export function computeBuyQueue(input: BuyQueueInput): BuyQueue {
+  if (input.mode === 'build') return computeBuildOrderQueue(input);
   const { build, ownedItems, investedItems, inventoryStatus, sellCandidates, investment, stat } = input;
   const buyTimeS = (itemId: string) => stat(itemId)?.buyTimeS || undefined;
   const isKeyCore = (itemId: string) => (stat(itemId)?.pickRate ?? 0) >= KEY_CORE_PICK_RATE;
@@ -105,6 +111,44 @@ export function computeBuyQueue(input: BuyQueueInput): BuyQueue {
   return {
     queue: nudgeTowardKeySpike(placed, investedItems, investment, { buyTimeS, isKeyCore, soldFor }),
     counters,
+  };
+}
+
+/**
+ * "My build" mode: the active build as written, for a player who follows their own build. Its required items (early,
+ * mid, late) in the build's order, the counters at the fixed places of buildPurchaseOrder, then its optional items
+ * (situational) in the build's order. An optional item that counters an enemy is picked first among the counters and
+ * takes a counter's place. Owned, consumed and sold items are skipped, a full inventory filters as in Auto mode, and
+ * leftover Tier 1 items still go last once 4 items are owned (getNextPurchases). No buy-time sort, no key-core or
+ * due-time placement, no 4,800 nudge, no late items from statistics.
+ * shortcut: "optional" is the build's `situational` phase: the author's optional categories only in a published build,
+ * plus its overflow past PHASE_CAPS (scripts/update-builds.mjs); a real per-item flag needs a new data field.
+ */
+export function computeBuildOrderQueue(input: BuyQueueInput): BuyQueue {
+  const { build, ownedItems, inventoryStatus, sellCandidates, items, t } = input;
+  const optional = build.phases.situational;
+  const answered = new Set([...effectiveOwnedSet(ownedItems), ...getBuildItemIds(build)]);
+  // Stable sort: counters against a fed enemy first, then the build's optional ones, the others in score order
+  const rank = (r: TacticalRecommendation['priorityItems'][number]) =>
+    counterRole(r) === 'fed' ? 0 : optional.includes(r.item.id) ? 1 : 2;
+  const priorityItems = [...dropAnsweredCounters(input.priorityItems, input.matchupAlerts, answered)].sort(
+    (a, b) => rank(a) - rank(b)
+  );
+  const counterContext = {
+    laneThreat: hasLaneThreat(input.matchupAlerts, input.laneOutlook),
+    laneOver: input.laneOver,
+  };
+  const order = buildPurchaseOrder(build, priorityItems, items, t, counterContext);
+  const queued = new Set(order.map((entry) => entry.item.id));
+  for (const id of optional) {
+    if (!queued.has(id) && items[id]) {
+      order.push({ item: items[id], reason: t('reason.optional'), phase: 'situational', extra: true });
+    }
+  }
+  const sold = effectiveOwnedSet(input.soldItems ?? []);
+  return {
+    queue: getNextPurchases(order, ownedItems, inventoryStatus, sellCandidates).filter((entry) => !sold.has(entry.item.id)),
+    counters: getPurchaseCounters(priorityItems, counterContext),
   };
 }
 

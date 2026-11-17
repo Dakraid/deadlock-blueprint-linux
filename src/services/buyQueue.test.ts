@@ -369,3 +369,81 @@ describe('the buy queue on simulated games', () => {
     expect(median(tally.finalTier4)).toBeGreaterThanOrEqual(3);
   });
 });
+
+describe('"My build" mode', () => {
+  const build = {
+    ...HEROES_DB[0].builds[0],
+    phases: {
+      early: ['extra_regen', 'extended_magazine', 'extra_spirit'],
+      mid: ['spirit_lifesteal', 'metal_skin', 'return_fire'],
+      late: ['boundless_spirit'],
+      situational: ['debuff_remover', 'healbane'],
+    },
+  };
+  const teamCounter = (id: string) => ({
+    item: ITEMS_DB[id],
+    reasons: ['[TEAM] a', '[TEAM] b'],
+    urgency: 'Haute (Teamfight / Mid)' as const,
+  });
+  // Buy times against the build's order: Auto mode would reorder the early items
+  const times: Record<string, number> = { extra_spirit: 100, extended_magazine: 200, extra_regen: 300 };
+  const queueFor = (ownedItems: string[], mode: 'smart' | 'build' = 'build') =>
+    ids(
+      computeBuyQueue({
+        build,
+        // Slowing Hex scores higher, but the build's own optional Healbane is the counter it picks
+        priorityItems: [teamCounter('slowing_hex'), teamCounter('healbane')],
+        matchupAlerts: [],
+        items: ITEMS_DB,
+        t,
+        ownedItems,
+        investedItems: ownedItems,
+        inventoryStatus: null,
+        sellCandidates: [],
+        investment: investmentProgress([], ownedItems),
+        stat: (id) => (times[id] ? { pickRate: 0.5, buyTimeS: times[id] } : undefined),
+        laneOver: false,
+        soldItems: ['return_fire'],
+        mode,
+      }).queue
+    );
+
+  it('follows the build order, an optional counter at the counter place, the other optional items last', () => {
+    expect(queueFor([])).toEqual([
+      'extra_regen',
+      'extended_magazine',
+      'healbane',
+      'extra_spirit',
+      'spirit_lifesteal',
+      'metal_skin',
+      'boundless_spirit',
+      'debuff_remover',
+    ]);
+    expect(queueFor([])[0]).not.toEqual(queueFor([], 'smart')[0]);
+  });
+
+  it('keeps a counter against a fed enemy ahead of an optional one', () => {
+    const fed = { ...teamCounter('slowing_hex'), reasons: ['🔥 fed', '[TEAM] b'] };
+    const { counters } = computeBuyQueue({
+      build,
+      priorityItems: [teamCounter('healbane'), fed],
+      matchupAlerts: [],
+      items: ITEMS_DB,
+      t,
+      ownedItems: [],
+      investedItems: [],
+      inventoryStatus: null,
+      sellCandidates: [],
+      investment: investmentProgress([], []),
+      stat: () => undefined,
+      laneOver: false,
+      mode: 'build',
+    });
+    expect(counters.map((r) => r.item.id)).toEqual(['slowing_hex']);
+  });
+
+  it('skips owned items', () => {
+    expect(queueFor(['extra_regen', 'boundless_spirit'])).not.toContain('extra_regen');
+    expect(queueFor(['extra_regen', 'boundless_spirit'])).not.toContain('boundless_spirit');
+  });
+});

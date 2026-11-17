@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.1.0] — 2026-11-17
+
+### Added
+- **Buy mode « My build »** (next to the build selector, shared with the overlay): the active build in its own order, counters at their fixed place, then the build's optional (situational) items. An optional item that counters an enemy is picked first among the counters. **Auto** keeps the current queue (key items, counters when due, usual buy order, 4,800 nudge, late-game items).
+- **Import a published build** (Import button next to the build selector): by build ID, or by searching its name among your hero's builds on deadlock-api.com. The author's item order and OPTIONAL categories are kept; it appears as the **Imported** build. Only published versions can be imported, not local edits.
+
 ## [3.0.0] — 2026-11-16
 
 First release of the Linux fork ([Dakraid/deadlock-blueprint-linux](https://github.com/Dakraid/deadlock-blueprint-linux)). The weekly builds still come from the original project.
