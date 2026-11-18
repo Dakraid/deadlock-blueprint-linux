@@ -4,7 +4,7 @@ import { makeTranslate } from '../i18n';
 import { ids } from '../test/queue';
 import { inBuyOrder, investmentProgress, spikeOrder } from './investments';
 import { getBuildItemIds } from './recommendations';
-import { RoutesInput, computeRoutes } from './routes';
+import { RoutesInput, computeRoutes, withDesiredItems } from './routes';
 
 const t = makeTranslate('en');
 
@@ -88,6 +88,12 @@ describe('computeRoutes', () => {
     expect(computeRoutes({ ...input('infernus', { ownedItems: ['debuff_remover'] }), threats }).high).toEqual([]);
   });
 
+  it('an enemy item read on the scoreboard brings its answer too', () => {
+    const base = input('infernus');
+    const enemyId = base.matchupAlerts[0].enemyId;
+    expect(ids(computeRoutes({ ...base, enemyItems: { [enemyId]: ['healbane'] } }).high)).toEqual(['debuff_remover']);
+  });
+
   it('an alternative names the main-route item it replaces: same shop tab, never a key core item; replaced items leave the route', () => {
     let named = 0;
     for (const hero of HEROES_DB) {
@@ -118,5 +124,62 @@ describe('computeRoutes', () => {
     expect(ids(computeRoutes(input('infernus', { clockS: 20 * 60, ownedItems: [first] })).normal)).not.toContain(first);
     expect(computeRoutes({ ...base, maxNormal: 5 }).normal).toHaveLength(5);
     expect(computeRoutes({ ...base, maxNormal: 0 }).normal).toEqual([]);
+  });
+
+  it('a desired item joins the main route in place of a weaker build item of its shop tab, in both buy modes', () => {
+    const base = input('infernus', { clockS: 20 * 60 });
+    const buildIds = new Set(getBuildItemIds(base.build));
+    const desiredId = Object.values(ITEMS_DB).find(
+      (item) => !buildIds.has(item.id) && item.tier === 3 && item.category === 'spirit'
+    )!.id;
+    const { replaces } = withDesiredItems(base.build, [desiredId], ITEMS_DB, base.stat);
+    expect(replaces[desiredId]).toBeDefined();
+    for (const mode of ['smart', 'build'] as const) {
+      const routes = computeRoutes({ ...base, mode, desiredItems: [desiredId] });
+      const entry = routes.main.find((e) => e.item.id === desiredId);
+      expect(entry).toMatchObject({ desired: true, reason: t('route.desired'), replaces: replaces[desiredId] });
+      if (replaces[desiredId]) {
+        expect(ids(routes.main)).not.toContain(replaces[desiredId]);
+        expect(ITEMS_DB[replaces[desiredId]].category).toBe('spirit');
+        expect(ITEMS_DB[replaces[desiredId]].tier).toBeLessThanOrEqual(3);
+      }
+      // Never an alternative too, and never the item an alternative replaces
+      expect(ids([...routes.high, ...routes.normal])).not.toContain(desiredId);
+      expect([...routes.high, ...routes.normal].map((alt) => alt.replaces)).not.toContain(desiredId);
+    }
+  });
+
+  it('a desired item the hero never buys stays in the route, and is never replaced by an alternative', () => {
+    for (const hero of HEROES_DB.slice(0, 10)) {
+      const base = input(hero.id, { clockS: 20 * 60, maxNormal: 5 });
+      const buildIds = new Set(getBuildItemIds(base.build));
+      const desiredId = Object.values(ITEMS_DB).find((item) => !buildIds.has(item.id) && !base.stat(item.id) && item.tier === 2);
+      if (!desiredId) continue;
+      const routes = computeRoutes({ ...base, desiredItems: [desiredId.id] });
+      expect(ids(routes.main)).toContain(desiredId.id);
+      expect(routes.normal.map((alt) => alt.replaces)).not.toContain(desiredId.id);
+    }
+  });
+
+  it('a desired item never takes the place of an item already owned', () => {
+    for (const hero of HEROES_DB) {
+      const base = input(hero.id);
+      const owned = [...base.build.phases.early, ...base.build.phases.mid];
+      const buildIds = new Set(getBuildItemIds(base.build));
+      for (const desired of Object.values(ITEMS_DB).filter((item) => !buildIds.has(item.id) && item.tier <= 2).slice(0, 6)) {
+        const { replaces } = withDesiredItems(base.build, [desired.id], ITEMS_DB, base.stat, owned);
+        if (replaces[desired.id]) expect(owned).not.toContain(replaces[desired.id]);
+      }
+    }
+  });
+
+  it('a desired item already required by the build keeps its place; an owned one is not offered', () => {
+    const base = input('infernus');
+    const buildItem = base.build.phases.mid[0];
+    const { build, replaces } = withDesiredItems(base.build, [buildItem], ITEMS_DB, base.stat);
+    expect(build.phases).toEqual(base.build.phases);
+    expect(replaces).toEqual({});
+    const owned = computeRoutes(input('infernus', { ownedItems: [buildItem], desiredItems: [buildItem] }));
+    expect(ids(owned.main)).not.toContain(buildItem);
   });
 });

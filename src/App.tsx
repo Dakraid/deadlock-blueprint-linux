@@ -44,7 +44,7 @@ import {
 } from './data/deadlockData';
 import { getDataInfo } from './data/dataSource';
 import { analyzeDeadlockScreen, VisionDetectionResult } from './services/visionScanner';
-import { LANE_BY_PAIR, MatchSnapshot, MatchTracker, MatchUpdate, TeamBoard, clockAt } from './services/matchTracker';
+import { EnemyItems, LANE_BY_PAIR, MatchSnapshot, MatchTracker, MatchUpdate, TeamBoard, clockAt } from './services/matchTracker';
 import { MidBossState, NowAdvice, getNowAdvice, midBossBackAt } from './services/nowAdvice';
 import {
   INVENTORY_SLOTS,
@@ -95,11 +95,12 @@ import type { AppInfo, UpdateStatus } from './electron';
 import { ItemCard } from './components/ItemCard';
 import { InvestmentLine, SpikeChip } from './components/InvestmentLine';
 import { HeroPortraitIcon, ItemArtworkIcon, PowerIcon } from './components/DeadlockIcons';
-import { CopyNameButton, ShopTabMarker } from './components/ShopHelpers';
+import { CopyNameButton, DesireButton, ShopTabMarker } from './components/ShopHelpers';
 import { SettingsModal } from './components/SettingsModal';
 import { OnboardingModal } from './components/OnboardingModal';
 import { ReportContent, ReportDialog } from './components/ReportDialog';
 import { DiagnosticsTab } from './components/DiagnosticsTab';
+import { takeDebugCapture } from './services/debugCaptures';
 import { BuildImportPanel } from './components/BuildImportPanel';
 import { importedArchetype, importedBuildId, readImportedBuilds, saveImportedBuild } from './services/importedBuild';
 import { I18nContext, makeI18n } from './i18n';
@@ -208,7 +209,7 @@ const OVERLAY_LABEL = 'block text-small font-bold uppercase tracking-caps text-i
 
 // Interface size of the main window (Settings)
 const UI_SCALE_KEY = 'dl_uiScale';
-const UI_SCALES = ['auto', '100', '115', '130'] as const;
+const UI_SCALES = ['auto', '50', '70', '85', '100', '115', '130'] as const;
 export type UiScale = (typeof UI_SCALES)[number];
 
 // My hero is auto-detected once per match, then locked (persisted so a restart mid-match keeps it)
@@ -217,8 +218,12 @@ const FED_ENEMIES_KEY = 'dl_fedEnemies';
 const SOLD_ITEMS_KEY = 'dl_soldItems';
 // Who killed me this match and what they owned (services/matchTracker.ts), shared with the overlay
 const THREATS_KEY = 'dl_threats';
+// The items of each enemy hero read on the scoreboard (Tab held, services/matchTracker.ts), shared with the overlay
+const ENEMY_ITEMS_KEY = 'dl_enemyItems';
 // Main-route items replaced by a bought alternative this match (services/routes.ts), shared with the overlay
 const REPLACED_ITEMS_KEY = 'dl_replacedItems';
+// Items the player wants in the main route, per hero (services/routes.ts › withDesiredItems), kept until unmarked
+const DESIRED_ITEMS_KEY = 'dl_desiredItems';
 // How many alternatives each tier shows (Settings), shared with the overlay
 const ALT_MAX_KEY = 'dl_altMax';
 const ALT_HIGH_MAX_KEY = 'dl_altHighMax';
@@ -364,12 +369,20 @@ export function App() {
     setThreats(next);
     localStorage.setItem(THREATS_KEY, JSON.stringify(next));
   }, []);
+  const [enemyItems, setEnemyItems] = useState<EnemyItems>(() => readJson(ENEMY_ITEMS_KEY, {}));
+  const storeEnemyItems = useCallback((next: EnemyItems) => {
+    setEnemyItems(next);
+    localStorage.setItem(ENEMY_ITEMS_KEY, JSON.stringify(next));
+  }, []);
   const [replacedItems, setReplacedItems] = useState<string[]>(() => readJson(REPLACED_ITEMS_KEY, []));
   const storeReplacedItems = useCallback((ids: string[]) => {
     setReplacedItems(ids);
     localStorage.setItem(REPLACED_ITEMS_KEY, JSON.stringify(ids));
   }, []);
+  const [isDesiredPickerOpen, setIsDesiredPickerOpen] = useState(false);
+  const [desiredByHero, setDesiredByHero] = useState<Record<string, string[]>>(() => readJson(DESIRED_ITEMS_KEY, {}));
   const [notices, setNotices] = useState<Notice[]>(() => readJson(NOTICES_KEY, []));
+  const [debugCaptureTick, setDebugCaptureTick] = useState(0);
   const storeNotices = useCallback((update: (prev: Notice[]) => Notice[]) => {
     setNotices((prev) => {
       const next = update(prev);
@@ -493,7 +506,9 @@ export function App() {
         setSoldItems(JSON.parse(localStorage.getItem(SOLD_ITEMS_KEY) || '[]'));
         setFedEnemyIds(JSON.parse(localStorage.getItem(FED_ENEMIES_KEY) || '[]'));
         setThreats(readJson(THREATS_KEY, {}));
+        setEnemyItems(readJson(ENEMY_ITEMS_KEY, {}));
         setReplacedItems(readJson(REPLACED_ITEMS_KEY, []));
+        setDesiredByHero(readJson(DESIRED_ITEMS_KEY, {}));
         setNotices(readJson(NOTICES_KEY, []));
         setAltMax(readStoredNumber(ALT_MAX_KEY, DEFAULT_MAX_NORMAL, 0, 5));
         setAltHighMax(readStoredNumber(ALT_HIGH_MAX_KEY, DEFAULT_MAX_HIGH, 0, 5));
@@ -630,15 +645,30 @@ export function App() {
   // Late items beyond the build (the queue goes on with them once the build runs out)
   const lateItems = useMemo(() => getHeroLateItems(myHeroId), [myHeroId]);
   const topItems = useMemo(() => getHeroTopItems(myHeroId), [myHeroId]);
+  const desiredItems = useMemo(() => desiredByHero[myHeroId] ?? [], [desiredByHero, myHeroId]);
+  const toggleDesired = (itemId: string) => {
+    const next = {
+      ...desiredByHero,
+      [myHeroId]: desiredItems.includes(itemId) ? desiredItems.filter((id) => id !== itemId) : [...desiredItems, itemId],
+    };
+    setDesiredByHero(next);
+    localStorage.setItem(DESIRED_ITEMS_KEY, JSON.stringify(next));
+  };
   const sellCandidates = useMemo(
     () =>
       getSellCandidates(
         inventoryStatus,
         activeBuild,
         // ...and the alternatives (services/routes.ts): one just bought must not be the first item to sell
-        new Set([...tacticalPlan.priorityItems.map((r) => r.item.id), ...lateItems, ...topItems, ...Object.values(ANSWERS).flat()])
+        new Set([
+          ...tacticalPlan.priorityItems.map((r) => r.item.id),
+          ...lateItems,
+          ...topItems,
+          ...Object.values(ANSWERS).flat(),
+          ...desiredItems,
+        ])
       ),
-    [inventoryStatus, activeBuild, tacticalPlan.priorityItems, lateItems, topItems]
+    [inventoryStatus, activeBuild, tacticalPlan.priorityItems, lateItems, topItems, desiredItems]
   );
 
   // Owned items plus the components they consumed (owning Greater Expansion means Mystic Expansion is done)
@@ -682,6 +712,8 @@ export function App() {
         threats,
         topItems,
         replacedItems,
+        desiredItems,
+        enemyItems,
         maxNormal: altMax,
         maxHigh: altHighMax,
         build: activeBuild,
@@ -707,6 +739,8 @@ export function App() {
       threats,
       topItems,
       replacedItems,
+      desiredItems,
+      enemyItems,
       altMax,
       altHighMax,
       buyMode,
@@ -935,6 +969,7 @@ export function App() {
     setInventoryStatus(null);
     storeFedEnemies([]);
     storeThreats({});
+    storeEnemyItems({});
     storeReplacedItems([]);
     storeNotices(() => []);
     storeMidBoss(null);
@@ -942,7 +977,7 @@ export function App() {
     // A new match starts from the queue's head, not from the item locked at the end of the last one
     setLockedNext(null);
     localStorage.removeItem('dl_lockedNext');
-  }, [storeFedEnemies, storeMidBoss, storeSoldItems, storeThreats, storeReplacedItems, storeNotices]);
+  }, [storeFedEnemies, storeMidBoss, storeSoldItems, storeThreats, storeEnemyItems, storeReplacedItems, storeNotices]);
 
   const boardJsonRef = useRef<string>(JSON.stringify(board));
 
@@ -951,6 +986,8 @@ export function App() {
   threatsRef.current = threats;
   // Restart in the middle of a match: the tracker counts on from the saved threats
   useEffect(() => trackerRef.current.restoreThreats(threatsRef.current), []);
+  const enemyItemsRef = useRef(enemyItems);
+  useEffect(() => trackerRef.current.restoreEnemyItems(enemyItemsRef.current), []);
   const applyThreats = useCallback(
     (next: Threats) => {
       for (const [heroId, { deaths }] of Object.entries(next)) {
@@ -988,6 +1025,7 @@ export function App() {
       }
       if (p.soldItems !== undefined) storeSoldItems(p.soldItems);
       if (update.threats) applyThreats(update.threats);
+      if (update.enemyItems) storeEnemyItems(update.enemyItems);
       setFormatIssue((prev) =>
         update.formatIssue
           ? prev && prev.width === update.formatIssue.width && prev.height === update.formatIssue.height
@@ -1003,7 +1041,7 @@ export function App() {
         localStorage.setItem(BOARD_KEY, boardJson);
       }
     },
-    [clearOwnedItems, lockHero, storeSoldItems, applyThreats]
+    [clearOwnedItems, lockHero, storeSoldItems, applyThreats, storeEnemyItems]
   );
 
 
@@ -1174,6 +1212,13 @@ export function App() {
     }
   }, [buildItemIds, isDiagnosticsOpen, applyMatchUpdate]);
 
+  /** Alt+P or the Diagnostics button: saves the current frame; the list of the Diagnostics tab reloads. */
+  const captureDebugFrame = useCallback(() => {
+    takeDebugCapture(snapshotRef.current.myHeroId)
+      .then((id) => id && setDebugCaptureTick((n) => n + 1))
+      .catch((err) => console.warn('Capture de debug :', err));
+  }, []);
+
   // Run initial scan + ultra-fast silent background scan every 350ms (near-instantaneous item updates)
   useEffect(() => {
     if (isDedicatedOverlayWindow) return;
@@ -1204,11 +1249,15 @@ export function App() {
         performScreenScan();
       }
     });
+    const unsubCapture = window.electronAPI.onTriggerDebugCapture(() => {
+      if (!isDedicatedOverlayWindow) captureDebugFrame();
+    });
     return () => {
       unsubOverlay();
       unsubScan();
+      unsubCapture();
     };
-  }, [isDedicatedOverlayWindow, performScreenScan]);
+  }, [isDedicatedOverlayWindow, performScreenScan, captureDebugFrame]);
 
   // Version and update notices (main window only)
   useEffect(() => {
@@ -1588,7 +1637,7 @@ export function App() {
 
   /** "Instead of X": the main-route item an alternative takes the place of. */
   const renderReplaces = (alt: QueueEntry | RouteAlt) =>
-    'replaces' in alt && alt.replaces ? (
+    alt.replaces ? (
       <span className="block text-small text-ink-muted truncate">{t('route.replaces', shortItemName(alt.replaces))}</span>
     ) : null;
 
@@ -1872,6 +1921,7 @@ export function App() {
           <div className="min-w-0 flex-1 space-y-1">
             <div className="flex items-start gap-1">
               <span className="font-label text-heading text-ink-strong leading-tight flex-1 min-w-0">{shortName}</span>
+              <DesireButton desired={desiredItems.includes(item.id)} onToggle={() => toggleDesired(item.id)} />
               <CopyNameButton name={shortName} />
             </div>
             <div className="flex items-center gap-x-2 gap-y-0.5 flex-wrap">
@@ -1880,6 +1930,7 @@ export function App() {
             </div>
           </div>
         </div>
+        {renderReplaces(entry)}
         {renderSlotPlan(item.id)}
         {renderImbueHint(item.id)}
         {renderSpikeHint(item.id)}
@@ -1910,6 +1961,7 @@ export function App() {
         <div className="min-w-0 flex-1 space-y-0.5">
           <div className="flex items-center gap-1 min-w-0">
             <span className="font-label text-title text-ink-strong truncate">{shortName}</span>
+            <DesireButton desired={desiredItems.includes(item.id)} onToggle={() => toggleDesired(item.id)} />
             <CopyNameButton name={shortName} />
             <InfoTip text={whyTip(alt)} />
           </div>
@@ -1940,9 +1992,11 @@ export function App() {
         <div className="min-w-0 flex-1 space-y-0.5">
           <div className="flex items-center gap-1 min-w-0">
             <span className="font-label text-title text-ink-strong truncate">{shortName}</span>
+            <DesireButton desired={desiredItems.includes(item.id)} onToggle={() => toggleDesired(item.id)} />
             <CopyNameButton name={shortName} />
             <InfoTip text={whyTip(entry)} />
           </div>
+          {renderReplaces(entry)}
           <div className="flex items-center gap-x-2 gap-y-0.5 flex-wrap">
             <span className="text-small font-extrabold text-info-300 tabular-nums">{t('souls', formatNumber(item.cost))}</span>
             <ShopTabMarker category={item.category} tier={item.tier} />
@@ -2485,6 +2539,18 @@ export function App() {
                               <span className="truncate">{open.ult.name.split('(')[0].trim()}</span>
                             </div>
                           )}
+                          {enemyItems[open.enemyId] && enemyItems[open.enemyId].length > 0 && (
+                            <div className="flex items-center gap-1.5 flex-wrap" title={t('enemies.ownsTitle')}>
+                              <span className="text-small font-semibold text-ink-muted shrink-0">{t('enemies.owns')}</span>
+                              {enemyItems[open.enemyId].map((itemId) =>
+                                ITEMS[itemId] ? (
+                                  <span key={itemId} title={ITEMS[itemId].name}>
+                                    <ItemArtworkIcon itemId={itemId} category={ITEMS[itemId].category} size={24} />
+                                  </span>
+                                ) : null
+                              )}
+                            </div>
+                          )}
                           {open.counters.length > 0 ? (
                             <ul className="space-y-1.5">
                               {open.counters.map(({ item, reason }) => {
@@ -2661,6 +2727,66 @@ export function App() {
             {/* ================= TAB 3: ITEM DETAILS ================= */}
             {activeTab === 'builds' && (
               <div className="space-y-4">
+                <div className="space-y-2">
+                  <SectionHeader
+                    title={t('desired.title')}
+                    aside={
+                      <span className="flex items-center gap-1.5">
+                        <InfoTip text={t('desired.help')} />
+                        <Button size="sm" variant="secondary" onClick={() => setIsDesiredPickerOpen((open) => !open)}>
+                          {t('desired.add')}
+                        </Button>
+                      </span>
+                    }
+                  />
+                  {isDesiredPickerOpen && (
+                    <PopoverPanel
+                      title={t('desired.pickerTitle')}
+                      onClose={() => setIsDesiredPickerOpen(false)}
+                      closeLabel={t('desired.close')}
+                      className="max-w-2xl bottom-4 overflow-y-auto"
+                    >
+                      {(['weapon', 'vitality', 'spirit'] as const).map((category) => (
+                        <div key={category} className="grid grid-cols-6 sm:grid-cols-10 gap-1 mb-2">
+                          {Object.values(ITEMS)
+                            .filter((item) => item.category === category)
+                            .sort((a, b) => a.tier - b.tier || a.name.localeCompare(b.name))
+                            .map((item) => (
+                              <PickTile
+                                key={item.id}
+                                selected={desiredItems.includes(item.id)}
+                                selectedClassName="bg-accent-500/25 border-accent-400"
+                                title={item.name}
+                                aria-label={item.name}
+                                className="justify-center"
+                                onClick={() => toggleDesired(item.id)}
+                              >
+                                <ItemArtworkIcon itemId={item.id} category={item.category} size={36} />
+                              </PickTile>
+                            ))}
+                        </div>
+                      ))}
+                    </PopoverPanel>
+                  )}
+                  {desiredItems.length === 0 ? (
+                    <p className="text-small text-ink-muted">{t('desired.empty')}</p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {desiredItems.map((itemId) =>
+                        ITEMS[itemId] ? (
+                          <ItemCard
+                            key={itemId}
+                            item={ITEMS[itemId]}
+                            isOwned={effectiveOwned.has(itemId)}
+                            onToggleOwned={handleToggleOwnedItem}
+                            isDesired
+                            onToggleDesired={toggleDesired}
+                          />
+                        ) : null
+                      )}
+                    </div>
+                  )}
+                </div>
                 <Card className="p-3">
                   <h3 className="font-display text-title tracking-display text-ink-strong">{activeBuild.name}</h3>
                   <p className="text-small text-ink-soft">{activeBuild.subtitle}</p>
@@ -2684,6 +2810,8 @@ export function App() {
                             item={item}
                             isOwned={effectiveOwned.has(itemId)}
                             onToggleOwned={handleToggleOwnedItem}
+                            isDesired={desiredItems.includes(itemId)}
+                            onToggleDesired={toggleDesired}
                           />
                         ) : null;
                       })}
@@ -2775,6 +2903,8 @@ export function App() {
                 onReport={() => setIsReportOpen(true)}
                 lastCaptureUrl={lastCaptureUrl}
                 lastDetection={lastDetection}
+                onDebugCapture={captureDebugFrame}
+                debugCaptureTick={debugCaptureTick}
               />
             )}
           </div>

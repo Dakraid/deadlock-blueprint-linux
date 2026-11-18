@@ -4,10 +4,12 @@
  *   usual buy times, key core items, the 4,800 spike nudge; the author's order in "My build" mode); once the build is
  *   bought, the queue's late items;
  * - alternatives, in two tiers. High priority: a counter against an enemy marked fed, against an enemy who killed me
- *   NEMESIS_DEATHS times or more, and an answer to an item that enemy owns against my hero (read on the death cam).
+ *   NEMESIS_DEATHS times or more, and an answer to an item an enemy owns against my hero (read on the death cam or
+ *   the scoreboard).
  *   Normal: the counters the buy queue would place now (lane and team ones, by its due-time rules), the build's
  *   optional items and what the hero's players buy outside the build. An alternative names the main-route item it
  *   would replace (replacedItem); once bought, that item leaves the main route (replacedItems).
+ * Items the player marked as desired (dl_desiredItems) join the main route (withDesiredItems).
  */
 import type { DeadlockItem, HeroBuildArchetype, TacticalRecommendation, ThreatTag } from '../data/deadlockData';
 import { BuyQueueInput, computeBuyQueue, estimateClockS } from './buyQueue';
@@ -40,8 +42,6 @@ export interface RouteAlt extends QueueEntry {
   priority: 'high' | 'normal';
   /** The enemy the item answers, when there is one */
   enemyId?: string;
-  /** The main-route item this one would take the place of (replacedItem), when there is one */
-  replaces?: string;
 }
 
 export interface Routes {
@@ -62,6 +62,10 @@ export interface RoutesInput extends BuyQueueInput {
   maxHigh?: number;
   /** Main-route items the player replaced by an alternative this match: they leave the main route */
   replacedItems?: string[];
+  /** Items the player wants in the route (withDesiredItems) */
+  desiredItems?: string[];
+  /** The items of each enemy hero read on the scoreboard (Tab held, MatchTracker) */
+  enemyItems?: Record<string, string[]>;
 }
 
 /**
@@ -76,8 +80,13 @@ export const ANSWERS: Partial<Record<ThreatTag, string[]>> = {
   flier_mobility: ['debuff_remover', 'unstoppable'], // they bought a knockdown or a hex
 };
 
-export function computeRoutes(input: RoutesInput): Routes {
-  const { build, items, t, ownedItems, stat, threats = {}, matchupAlerts } = input;
+export function computeRoutes(routesInput: RoutesInput): Routes {
+  const { items, t, ownedItems, stat, threats = {}, matchupAlerts } = routesInput;
+  // The desired items are part of the build from here on: ordered, kept from sale and never replaced like its own
+  const desiredIds = new Set(routesInput.desiredItems ?? []);
+  const desired = withDesiredItems(routesInput.build, [...desiredIds], items, stat, ownedItems);
+  const input = { ...routesInput, build: desired.build };
+  const { build } = input;
   const buildIds = new Set(getBuildItemIds(build));
   const owned = effectiveOwnedSet(ownedItems);
   const sold = effectiveOwnedSet(input.soldItems ?? []);
@@ -85,7 +94,13 @@ export function computeRoutes(input: RoutesInput): Routes {
 
   // Main route: the buy queue without any counter or late item, so nothing outside the build moves its order
   const replaced = new Set(input.replacedItems ?? []);
-  const ownQueue = computeBuyQueue({ ...input, priorityItems: [] }).queue.filter((entry) => !replaced.has(entry.item.id));
+  const ownQueue = computeBuyQueue({ ...input, priorityItems: [] })
+    .queue.filter((entry) => !replaced.has(entry.item.id) || desiredIds.has(entry.item.id))
+    .map((entry) =>
+      desiredIds.has(entry.item.id)
+        ? { ...entry, desired: true, reason: t('route.desired'), replaces: desired.replaces[entry.item.id] }
+        : entry
+    );
   const buildOnly = ownQueue.filter((entry) => !entry.extra);
   // Build bought: the route goes on with the queue's late items (lateGameEntries), or the #1, "Now" and the game log
   // would have nothing to buy for the rest of a long game
@@ -119,9 +134,10 @@ export function computeRoutes(input: RoutesInput): Routes {
   for (const r of priorityItems) {
     if (counterRole(r) === 'fed') add(r.item.id, r.reasons[0] ?? '', 'high');
   }
-  // An enemy item that counters my hero, seen on the death cam: its answer, unless I already own one
+  // An enemy item that counters my hero, seen on the death cam or the scoreboard: its answer, unless I already own one
   for (const alert of matchupAlerts) {
-    for (const enemyItemId of threats[alert.enemyId]?.items ?? []) {
+    const enemyItems = new Set([...(threats[alert.enemyId]?.items ?? []), ...(input.enemyItems?.[alert.enemyId] ?? [])]);
+    for (const enemyItemId of enemyItems) {
       const tag = items[enemyItemId]?.countersTags?.find((c) => input.myThreatTags.includes(c));
       const answers = tag ? ANSWERS[tag] : undefined;
       if (!answers || answers.some((id) => owned.has(id))) continue;
@@ -166,10 +182,10 @@ export function computeRoutes(input: RoutesInput): Routes {
       .filter((alt) => alt.priority === priority && fits.has(alt.item.id))
       .slice(0, Math.max(0, max))
       .map((alt) => {
-        // Never an item another alternative moves up
+        // Never an item another alternative moves up, nor one the player asked for
         const replaces = buildIds.has(alt.item.id)
           ? undefined
-          : replacedItem(alt.item, main.filter((entry) => !seen.has(entry.item.id)), stat);
+          : replacedItem(alt.item, main.filter((entry) => !seen.has(entry.item.id) && !entry.desired), stat);
         return replaces ? { ...alt, replaces } : alt;
       });
   return {
@@ -198,6 +214,54 @@ export function replacedItem(alt: DeadlockItem, main: QueueEntry[], stat: BuyQue
         pickRate(item.id) < KEY_CORE_PICK_RATE
     )
     .sort((a, b) => pickRate(a.id) - pickRate(b.id) || b.tier - a.tier)[0]?.id;
+}
+
+/**
+ * The build with the items the player marked as desired: each one takes the place of the build item it would replace
+ * (replacedItem: same shop tab, same tier or lower, the least bought, never a key core item, never one already owned),
+ * or joins the phase of its tier (I early, II mid, III-IV late) when none fits. A desired item already required by the build is left where it
+ * is; an optional (situational) one becomes required. `replaces`: what each desired item took the place of.
+ */
+export function withDesiredItems(
+  build: HeroBuildArchetype,
+  desired: string[],
+  items: Record<string, DeadlockItem>,
+  stat: BuyQueueInput['stat'],
+  ownedItems: string[] = []
+): { build: HeroBuildArchetype; replaces: Record<string, string> } {
+  const replaces: Record<string, string> = {};
+  if (desired.length === 0) return { build, replaces };
+  const required = ['early', 'mid', 'late'] as const;
+  const owned = effectiveOwnedSet(ownedItems);
+  const phases = {
+    early: [...build.phases.early],
+    mid: [...build.phases.mid],
+    late: [...build.phases.late],
+    situational: build.phases.situational.filter((id) => !desired.includes(id)),
+  };
+  for (const id of desired) {
+    const item = items[id];
+    if (!item || required.some((p) => phases[p].includes(id))) continue;
+    const candidates = required
+      .flatMap((p) => phases[p])
+      .filter((other) => items[other] && !desired.includes(other) && !owned.has(other))
+      .map((other) => ({ item: items[other], reason: '' }));
+    const replaced = replacedItem(item, candidates, stat);
+    const phase = replaced
+      ? required.find((p) => phases[p].includes(replaced))!
+      : item.tier <= 1
+        ? 'early'
+        : item.tier === 2
+          ? 'mid'
+          : 'late';
+    if (replaced) {
+      phases[phase][phases[phase].indexOf(replaced)] = id;
+      replaces[id] = replaced;
+    } else {
+      phases[phase].push(id);
+    }
+  }
+  return { build: { ...build, phases }, replaces };
 }
 
 /** The share of the build bought so far, for the route's header. */

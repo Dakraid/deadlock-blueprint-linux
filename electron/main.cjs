@@ -291,6 +291,13 @@ app.whenReady().then(() => {
     }
   });
 
+  // Debug capture (Diagnostics › Debug captures). No Tab in the shortcut: it must fire while Tab is held.
+  globalShortcut.register('Alt+P', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('trigger-debug-capture');
+    }
+  });
+
   setupAutoUpdater();
   setTimeout(() => checkForUpdates(false), 10000);
   setInterval(() => checkForUpdates(false), 6 * 3600 * 1000);
@@ -486,6 +493,65 @@ ipcMain.handle('delete-match-logs', () => {
   endMatchLog();
   fs.rmSync(matchLogsRoot(), { recursive: true, force: true });
   return true;
+});
+
+// Debug captures (src/services/debugCaptures.ts): <id>.png (the captured frame, lossless) and <id>.json (what the
+// player says it shows) under ~/.config/deadlock-tactical-autobuild/debug-captures/. Never deleted by the app
+// unless the player asks.
+function debugCapturesRoot() {
+  return path.join(app.getPath('userData'), 'debug-captures');
+}
+
+/** Path of a capture's file; null for anything that is not a capture id (the id comes from the renderer). */
+function debugCaptureFile(id, ext) {
+  return /^cap_[\w-]+$/.test(String(id)) ? path.join(debugCapturesRoot(), `${id}.${ext}`) : null;
+}
+
+ipcMain.handle('debug-capture-save', (_event, data, meta) => {
+  const id = `cap_${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  fs.mkdirSync(debugCapturesRoot(), { recursive: true });
+  fs.writeFileSync(debugCaptureFile(id, 'png'), Buffer.from(data));
+  fs.writeFileSync(debugCaptureFile(id, 'json'), JSON.stringify({ ...meta, id, appVersion: app.getVersion() }, null, 2));
+  return id;
+});
+
+ipcMain.handle('debug-capture-list', () => {
+  const root = debugCapturesRoot();
+  if (!fs.existsSync(root)) return [];
+  const captures = [];
+  for (const name of fs.readdirSync(root).filter((n) => n.endsWith('.json')).sort().reverse()) {
+    try {
+      captures.push(JSON.parse(fs.readFileSync(path.join(root, name), 'utf8')));
+    } catch {
+      // A file edited by hand into invalid JSON: left out, not deleted
+    }
+  }
+  return captures;
+});
+
+ipcMain.handle('debug-capture-annotate', (_event, capture) => {
+  const file = debugCaptureFile(capture && capture.id, 'json');
+  if (!file || !fs.existsSync(file)) return false;
+  fs.writeFileSync(file, JSON.stringify(capture, null, 2));
+  return true;
+});
+
+ipcMain.handle('debug-capture-image', (_event, id) => {
+  const file = debugCaptureFile(id, 'png');
+  return file && fs.existsSync(file) ? fs.readFileSync(file) : null;
+});
+
+ipcMain.handle('debug-capture-delete', (_event, id) => {
+  for (const ext of ['png', 'json']) {
+    const file = debugCaptureFile(id, ext);
+    if (file) fs.rmSync(file, { force: true });
+  }
+  return true;
+});
+
+ipcMain.handle('open-debug-captures', () => {
+  fs.mkdirSync(debugCapturesRoot(), { recursive: true });
+  return shell.openPath(debugCapturesRoot());
 });
 
 // Problem report (Diagnostics › Report a problem): a .zip in the Downloads folder with the system info, the

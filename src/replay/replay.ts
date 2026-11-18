@@ -45,6 +45,7 @@ export interface ReplaySummary {
   enemySlots: (string | null)[] | null;
   dead: string | null; // respawn timers, allies | enemies: "000100|110000"
   topBar: string | null; // match clock and team souls in thousands, left/right: "15:45 62/72"
+  scoreboard: string[] | null; // Tab held: each column's items, 6 allies then 6 enemies, "a,b,c" ("?" unread)
   slots: string[]; // '.' empty, 'lock', '?category' unknown, item id ('~id' on cooldown)
   occupied: number;
   locked: number;
@@ -79,6 +80,9 @@ function summarize(d: VisionDetectionResult): ReplaySummary {
       ? `${d.topBar.clockS === undefined ? '?' : `${Math.floor(d.topBar.clockS / 60)}:${String(d.topBar.clockS % 60).padStart(2, '0')}`} ${
           d.topBar.allySouls ?? '?'
         }/${d.topBar.enemySouls ?? '?'}`
+      : null,
+    scoreboard: d.scoreboard
+      ? [...d.scoreboard.allies, ...d.scoreboard.enemies].map((items) => (items ? items.join(',') : '?'))
       : null,
     slots: (d.inventorySlots ?? []).map((s) =>
       s.state === 'empty'

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Copy, Crosshair, HeartPulse, Sparkles } from 'lucide-react';
+import { Check, Copy, Crosshair, HeartPulse, Sparkles, Star } from 'lucide-react';
 import type { ItemCategory, ItemTier } from '../data/deadlockData';
 import { useI18n } from '../i18n';
 
@@ -63,6 +63,28 @@ export const CopyNameButton: React.FC<{ name: string }> = ({ name }) => {
       className="p-1 -m-0.5 rounded-md text-ink-muted hover:text-ink-strong hover:bg-bone/10 shrink-0 transition"
     >
       {copied ? <Check className="w-3.5 h-3.5 text-good-400" /> : <Copy className="w-3.5 h-3.5" />}
+    </button>
+  );
+};
+
+/** ★ toggle: the item joins the main route (desired items, services/routes.ts › withDesiredItems). Never toggles the card it sits on. */
+export const DesireButton: React.FC<{ desired: boolean; onToggle: () => void }> = ({ desired, onToggle }) => {
+  const { t } = useI18n();
+  const label = desired ? t('desired.unmark') : t('desired.mark');
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      onKeyDown={(e) => e.stopPropagation()}
+      title={label}
+      aria-label={label}
+      aria-pressed={desired}
+      className="p-1 -m-0.5 rounded-md text-ink-muted hover:text-ink-strong hover:bg-bone/10 shrink-0 transition"
+    >
+      <Star className={desired ? 'w-3.5 h-3.5 text-accent-400 fill-current' : 'w-3.5 h-3.5'} />
     </button>
   );
 };

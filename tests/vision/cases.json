@@ -840,6 +840,71 @@
         "frame": "2560x1440",
         "slots": ["extra_spirit", "enchanters_barrier", "superior_stamina", "rapid_recharge", "spiritual_overflow", "arctic_blast", "recharging_rush", "healbane", "greater_expansion", "transcendent_cooldown", "magic_carpet", "spirit_burn"]
       }
+    },
+    {
+      "name": "sapphire_scoreboard_2924",
+      "description": "Scoreboard (Tab held) at 29:24, alive, real 2560x1440 capture: every player's items (my column, Rat King: the 12 items of my inventory). Below the player names only, the strip between the teams (in-world name tags) blanked: public repository.",
+      "heroId": "rat_king",
+      "parts": [
+        { "file": "frames/sapphire_scoreboard_2924_top.jpg", "x": 0, "y": 0 },
+        { "file": "frames/sapphire_scoreboard_2924_board.png", "x": 330, "y": 325 }
+      ],
+      "expect": {
+        "mode": "hud",
+        "scoreboard": [
+          "restorative_shot,close_quarters,enduring_speed,cultist_sacrifice,fortitude,weighted_shots,vampiric_burst,silencer",
+          "stalker,healbane,quicksilver_reload,bullet_resist_shredder,weakening_headshot,spirit_snatch,surge_of_power,shadow_weave,lifestrike,hunters_aura,improved_burst",
+          "monster_rounds,extra_health,swift_striker,surge_of_power,mercurial_magnum,capacitor,boundless_spirit,indomitable,spiritual_overflow",
+          "extra_health,pristine_emblem,battle_vest,suppressor,spirit_lifesteal,titanic_magazine,intensifying_magazine,metal_skin,cultist_sacrifice,superior_cooldown,ballistic_enchantment,radiant_regeneration",
+          "battle_vest,bullet_resist_shredder,recharging_rush,swift_striker,titanic_magazine,weakening_headshot,rapid_recharge,sharpshooter,hollow_point,vampiric_burst",
+          "headshot_booster,healing_rite,extra_charge,mystic_reach,slowing_hex,spirit_shielding,enchanters_barrier,arcane_surge,healing_booster,shadow_weave,superior_cooldown,refresher",
+          "mystic_reach,arcane_surge,improved_spirit,guardian_ward,improved_cooldown,rapid_recharge,rescue_beam,echo_shard",
+          "restorative_shot,melee_lifesteal,stalker,healbane,soul_shredder_bullets,reactive_barrier,spirit_snatch,superior_cooldown,leech,boundless_spirit",
+          "pristine_emblem,enchanters_barrier,improved_spirit,reactive_barrier,healbane,sharpshooter,improved_burst,greater_expansion,superior_cooldown,debuff_remover",
+          "extra_regen,swift_striker,active_reload,battle_vest,surge_of_power,burst_fire,fortitude,superior_duration,tesla_bullets,vampiric_burst",
+          "arcane_surge,spirit_lifesteal,cultist_sacrifice,superior_duration,greater_expansion,escalating_exposure,unstoppable",
+          "quicksilver_reload,cold_front,trophy_collector,healbane,reactive_barrier,torment_pulse,superior_duration,improved_burst,transcendent_cooldown,escalating_exposure"
+        ]
+      }
+    },
+    {
+      "name": "sapphire_scoreboard_dead_1927",
+      "description": "Scoreboard (Tab held) at 19:27 while dead and spectating a teammate: the columns start 8 px lower. Bebop's column holds the 9 items of the spectated inventory. The 'SPECTATING <player>' label is blanked.",
+      "heroId": "rat_king",
+      "parts": [
+        { "file": "frames/sapphire_scoreboard_dead_1927_top.jpg", "x": 0, "y": 0 },
+        { "file": "frames/sapphire_scoreboard_dead_1927_board.png", "x": 330, "y": 325 }
+      ],
+      "expect": {
+        "mode": "hud",
+        "scoreboard": [
+          "monster_rounds,extra_health,quicksilver_reload,swift_striker,surge_of_power,tesla_bullets",
+          "extra_health,pristine_emblem,spirit_lifesteal,swift_striker,titanic_magazine,enduring_speed,cultist_sacrifice",
+          "mystic_burst,spirit_strike,mystic_reach,melee_charge,healbane,lifestrike,point_blank,superior_cooldown",
+          "mystic_burst,healing_rite,extra_regen,stalker,bullet_lifesteal,trophy_collector,spirit_snatch,tesla_bullets,fortitude",
+          "mystic_regeneration,suppressor,healbane,improved_cooldown,mystic_vulnerability,headhunter,ricochet",
+          "extra_charge,pristine_emblem,improved_spirit,enduring_speed,swift_striker,quicksilver_reload,titanic_magazine,sharpshooter,burst_fire",
+          "grit,mystic_reach,quicksilver_reload,improved_spirit,debuff_remover,superior_stamina,improved_burst",
+          "improved_spirit,suppressor,arcane_surge,mystic_vulnerability,mystic_slow,improved_cooldown,improved_burst,greater_expansion",
+          "extra_charge,mystic_reach,extra_stamina,improved_spirit,quicksilver_reload,mystic_shot,healbane,weapon_shielding,improved_burst",
+          "restorative_shot,extra_stamina,mystic_shot,weapon_shielding,mystic_vulnerability,spirit_lifesteal,improved_spirit,tesla_bullets,torment_pulse",
+          "restorative_shot,spirit_strike,stalker,cold_front,melee_charge,mystic_shot,healbane,enchanters_barrier,improved_cooldown,lifestrike",
+          "extra_regen,extra_health,pristine_emblem,titanic_magazine,enduring_speed,fleetfoot,bullet_resist_shredder,mercurial_magnum"
+        ]
+      }
+    },
+    {
+      "name": "amber_scoreboard_empty_0019",
+      "description": "Scoreboard (Tab held) at 0:19, Amber side, nobody owns an item yet: no scoreboard reading (nothing to learn).",
+      "heroId": "rat_king",
+      "parts": [
+        { "file": "frames/amber_scoreboard_empty_0019_top.jpg", "x": 0, "y": 0 },
+        { "file": "frames/amber_scoreboard_empty_0019_board.png", "x": 330, "y": 325 }
+      ],
+      "expect": {
+        "mode": "hud",
+        "scoreboard": null
+      }
     }
   ]
 }

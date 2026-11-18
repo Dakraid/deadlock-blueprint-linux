@@ -24,6 +24,8 @@ export interface QueueEntry {
   phase?: 'early' | 'mid' | 'late' | 'situational'; // phase of the active build that holds the item
   role?: CounterRole; // set on a counter that is not part of the build
   extra?: boolean; // beyond the build: a late item (situational, or bought by the hero's players) once the build runs out
+  desired?: boolean; // marked as desired by the player (routes.ts › withDesiredItems)
+  replaces?: string; // the build item it takes the place of (an alternative, or a desired item)
 }
 
 export type SlotPlan =

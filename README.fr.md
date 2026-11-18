@@ -36,16 +36,18 @@ Toutes les 350 ms, l'application lit l'image de la fenêtre Deadlock et reconna�
 - **Ton héros** grâce à ton portrait surligné dans la barre du haut (les 44 héros). Il est **verrouillé pour toute la partie** : quand tu es mort et que tu regardes un coéquipier, rien ne bouge.
 - **Tes alliés, les 6 ennemis, ta lane et ton partenaire de lane**, que tu joues côté Ambre ou Saphir. Chaque portrait est voté sur toute la partie : une image mal lue (chrono de réapparition, bannière de PV critiques) ne change rien.
 - **Ton inventaire** (12 slots, y compris ceux encore verrouillés), même boutique ouverte et objets en recharge.
+- **Les objets de chaque joueur quand tu maintiens Tab** (tableau des scores, écrans 16:9) : mesuré sur des captures 2560×1440.
 - **Tes âmes**, lues par OCR, entièrement hors ligne.
 
 ### 🛒 Recommandations d'achat
 - **Builds méta issus de vraies statistiques** : les objets les plus achetés en haut rang (Oracle+, 30 derniers jours) et le build publié avec le meilleur taux de victoire, via [deadlock-api.com](https://deadlock-api.com). **Mis à jour chaque semaine**, sans nouvelle version de l'application.
 - **Maintenant** : quoi faire tout de suite, d'après qui est mort de chaque côté, le chrono, les âmes des deux équipes et tes matchups : acheter ou farmer, pousser ou faire le Mid Boss quand ton équipe a l'avantage, jouer safe quand elle est en retard, aller aider une lane où un allié est seul contre deux, qui focus et qui éviter en 1v1, avec leur photo. Un bouton **« Mid Boss pris »** compte sa réapparition.
-- **Contrer les ennemis** : une fiche par ennemi avec son ult et les 3 meilleurs objets contre lui.
+- **Contrer les ennemis** : une fiche par ennemi avec son ult, les 3 meilleurs objets contre lui et, une fois Tab maintenu, les objets qu'il possède. Un objet ennemi qui contre ton héros fait remonter sa réponse en tête.
 - **« À acheter tout de suite »** : les prochains objets dans l'ordre, avec l'onglet de la boutique et ce qu'il te manque en âmes. Le **#1 reste fixe** jusqu'à ce que tu l'achètes.
 - **Pourquoi cet objet ?** « Acheté dans 76 % des parties Oracle+ d'Infernus · 47,8 % de victoires quand il est acheté · acheté vers 18:42 en moyenne », ou « Anti-soin contre Baba ».
 - **Contres automatiques** contre tes adversaires de lane et l'équipe ennemie (anti-soin, résistances, immunité aux contrôles…), plus les objets qui gagnent vraiment plus contre chaque ennemi avec ton héros (parties haut rang).
 - **Qui éviter, qui focus** : chaque ennemi est classé d'après le vrai taux de victoire de ton héros contre lui (en lane pour tes adversaires de lane) : *Évite ses 1v1*, *Équilibré* ou *Focus*, avec la difficulté de ta lane et les résultats de ton héros avec ton partenaire de lane. **Clique sur un ennemi fed** : ses contres passent en premier, et l'overlay te rappelle de ne pas prendre ses 1v1.
+- **Objets voulus** : clique ★ sur n'importe quel objet (ou choisis-le dans **Détails Objets**) et la route lui fait une place.
 - **Jamais un objet que tu as déjà**, ni un composant déjà amélioré.
 - **Inventaire plein ?** Chaque recommandation indique **quel objet vendre** (le moins utile pour ton build), ou **lequel sera remplacé** s'il s'agit d'une amélioration.
 
@@ -124,6 +126,7 @@ Un skin de héros dont le portrait est très différent du portrait par défaut 
 | <kbd>Alt</kbd> + <kbd>L</kbd> | **Mode fantôme** : les clics traversent l'overlay |
 | <kbd>Alt</kbd> + <kbd>K</kbd> | **Disposer l'overlay** : déplacer, redimensionner, opacité, taille (rappuyer pour revenir au jeu) |
 | <kbd>Alt</kbd> + <kbd>S</kbd> | Forcer un scan immédiat |
+| <kbd>Alt</kbd> + <kbd>P</kbd> | **Capture de debug** : enregistre l'image capturée (onglet Diagnostic) |
 
 ### 🖱️ Corriger à la main
 - **Clic sur ton héros** (en haut à gauche) : choisis-le dans la liste ; il est alors verrouillé pour la partie.

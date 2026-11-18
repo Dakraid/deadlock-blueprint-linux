@@ -377,6 +377,57 @@ describe('who killed me (death cam)', () => {
   });
 });
 
+describe('scoreboard (Tab held)', () => {
+  const mine = ['extended_magazine', 'healbane'];
+  const start = snapshot({ ownedItems: mine });
+  const columns = (allyMine: string[] | null, enemyItems: (string[] | null)[]) => ({
+    allies: ALLIES.map((id) => (id === 'infernus' ? allyMine : ['monster_rounds'])),
+    enemies: enemyItems,
+  });
+  const enemyItems = [['metal_skin'], null, ['healbane', 'toxic_bullets'], [], ['mystic_reach'], ['extra_regen']];
+  const lastEnemyItems = (updates: MatchUpdate[]) => updates.map((u) => u.enemyItems).filter(Boolean).pop();
+
+  it("reads each enemy's items after 2 scoreboard frames, by the hero voted in its slot", () => {
+    const tab = hud(mine, { scoreboard: columns(mine, enemyItems) });
+    const once = run([...times(10, hud(mine)), tab], start);
+    expect(lastEnemyItems(once.updates)).toBeUndefined();
+    const { updates } = run([...times(10, hud(mine)), tab, tab], start);
+    expect(lastEnemyItems(updates)).toEqual({
+      apollo: ['metal_skin'],
+      paige: ['healbane', 'toxic_bullets'],
+      wraith: [],
+      rat_king: ['mystic_reach'],
+      haze: ['extra_regen'],
+    });
+  });
+
+  it('ignores a scoreboard whose column for my slot does not hold my items, or seen from the death cam', () => {
+    const notMine = hud(mine, { scoreboard: columns(['metal_skin', 'toxic_bullets'], enemyItems) });
+    expect(lastEnemyItems(run([...times(10, hud(mine)), ...times(4, notMine)], start).updates)).toBeUndefined();
+    const flipped = hud(mine, { allySlots: ENEMIES, enemySlots: ALLIES, scoreboard: columns(mine, enemyItems) });
+    expect(lastEnemyItems(run([...times(10, hud(mine)), ...times(4, flipped)], start).updates)).toBeUndefined();
+  });
+
+  it('scoreboard frames never vote the portraits (level badges over them)', () => {
+    const alive = { allyDead: times(6, false), enemyDead: times(6, false) };
+    const misread = hud(mine, { ...alive, enemySlots: ['billy', ...ENEMIES.slice(1)], scoreboard: columns(mine, enemyItems) });
+    const { updates } = run([...times(3, hud(mine, alive)), ...times(20, misread)], start);
+    expect(updates.at(-1)!.board?.enemies[0].heroId).toBe('apollo');
+  });
+
+  it('is forgotten with the owned items (new match), and restored after a restart', () => {
+    const tab = hud(mine, { scoreboard: columns(mine, enemyItems) });
+    const { tracker } = run([...times(10, hud(mine)), tab, tab], start);
+    tracker.resetOwned();
+    const later = hud(mine, { scoreboard: columns(mine, [['metal_skin'], null, null, null, null, null]) });
+    expect(lastEnemyItems(run([later, later], start, tracker, 1_010_000).updates)).toEqual({ apollo: ['metal_skin'] });
+    const restarted = new MatchTracker();
+    restarted.restoreEnemyItems({ haze: ['extra_regen'] });
+    const next = run([...times(10, hud(mine)), later, later], start, restarted, 1_020_000);
+    expect(lastEnemyItems(next.updates)).toEqual({ haze: ['extra_regen'], apollo: ['metal_skin'] });
+  });
+});
+
 describe('recorded games', () => {
   const games = [
     { file: 'amber_infernus_part1', finalOwned: 11 },

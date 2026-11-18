@@ -23,6 +23,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     info: () => ipcRenderer.invoke('match-logs-info'),
     deleteAll: () => ipcRenderer.invoke('delete-match-logs'),
   },
+  debugCaptures: {
+    save: (data, meta) => ipcRenderer.invoke('debug-capture-save', data, meta),
+    list: () => ipcRenderer.invoke('debug-capture-list'),
+    annotate: (capture) => ipcRenderer.invoke('debug-capture-annotate', capture),
+    image: (id) => ipcRenderer.invoke('debug-capture-image', id),
+    remove: (id) => ipcRenderer.invoke('debug-capture-delete', id),
+    openFolder: () => ipcRenderer.invoke('open-debug-captures'),
+  },
   createProblemReport: (payload) => ipcRenderer.invoke('create-problem-report', payload),
   updates: {
     check: () => ipcRenderer.invoke('check-for-updates'),
@@ -38,6 +46,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = (_event, state) => callback(state);
     ipcRenderer.on('overlay-state-changed', listener);
     return () => ipcRenderer.removeListener('overlay-state-changed', listener);
+  },
+  onTriggerDebugCapture: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('trigger-debug-capture', listener);
+    return () => ipcRenderer.removeListener('trigger-debug-capture', listener);
   },
   onTriggerShortcutScan: (callback) => {
     const listener = () => callback();

@@ -22,6 +22,7 @@ export interface VisionDetectionResult {
   allySlots?: (string | null)[]; // hero of each of the 6 ally portraits (left), null when unreadable
   enemySlots?: (string | null)[]; // hero of each of the 6 enemy portraits (right)
   topBar?: TopBarReading; // last match clock and team souls read (background OCR, possibly from an earlier frame)
+  scoreboard?: ScoreboardReading; // scoreboard (Tab held) seen on this frame: the items of each player
   allyDead?: boolean[]; // respawn timer over each of the 6 ally portraits (dead), set with allySlots
   enemyDead?: boolean[];
   mySlotIndex?: number; // ally slot used as mine for the lane (-1 when unknown)
@@ -59,6 +60,15 @@ export interface TopBarReading {
   // Portraits of that frame: the death cam shows the killer's top bar, whose left side is not my team
   allySlots: (string | null)[];
   enemySlots: (string | null)[];
+}
+
+/**
+ * The scoreboard (Tab held): each player's items, in the column under their portrait, in the game's order. null: a
+ * column whose first item was not read (no item yet, or covered).
+ */
+export interface ScoreboardReading {
+  allies: (string[] | null)[];
+  enemies: (string[] | null)[];
 }
 
 const HERO_ICONS = officialIconsMap.heroes as Record<string, string>;
@@ -766,6 +776,169 @@ async function getItemTemplates(): Promise<ItemIconTemplate[]> {
   await Promise.all(tasks);
   cachedItemTemplates = templates;
   return templates;
+}
+
+// ---- Scoreboard (Tab held) ----
+// Measured on two real 2560x1440 captures (Sapphire, at 21:03 dead and spectating, and at 29:24 alive), box-filtered
+// to 1080p. Each player's items sit in a column under their portrait (allies x = 343 + i * 88, enemies 1075 + i * 88,
+// +0 or +1 px), two 27 px icons per row, 34.5 px apart, the first row at y = 334 (+4 under a two-line hero name such
+// as Deadman Danny, +8 while dead or spectating; +12 for both, extrapolated: not seen yet). Items fill the grid in order: the first empty cell
+// ends the column.
+const SCOREBOARD_ICON = 27;
+const SCOREBOARD_PITCH = 34.5;
+const SCOREBOARD_Y = 334;
+const SCOREBOARD_X = { allies: 343, enemies: 1075 };
+const SCOREBOARD_DY = [0, 4, 8, 12];
+const SCOREBOARD_MAX_ITEMS = 16;
+// The panel dims and greys the icons (raw error of correct items 28-38): they are matched after normalizing each
+// colour channel of the icon and the template (mean 0, deviation 1), within the shop tab told by the tier corner.
+// Measured over the 214 items of both captures: correct items 3.6-14.4 with the runner-up >= 3.7 higher (the 12 items
+// of my column and the 9 of a spectated teammate's are those of the HUD inventory); panel background and game world
+// >= 16.7 (28 frames without a scoreboard or without items, Street Brawl screens included: no column read).
+const SCOREBOARD_MATCH_MAX = 16;
+const SCOREBOARD_MATCH_MARGIN = 3;
+const SCOREBOARD_CLEAR_MATCH = 10; // a match this good is not searched around (±1 px)
+const SCOREBOARD_MIN_STD = 15; // luminance deviation of an icon: the empty panel is flat
+// A scoreboard has 11-12 readable columns late in a match; one column is not a scoreboard
+const SCOREBOARD_MIN_COLUMNS = 3;
+
+/** Masked pixels of the 20x20 grid: without the tier corner (top right) nor the "ACTIVE" label (bottom rows). */
+const SCOREBOARD_MASK: number[] = [];
+for (let py = 2; py < 15; py++) {
+  for (let px = 2; px < 18; px++) {
+    if (!(px >= 8 && py <= 11 && px - py >= 6)) SCOREBOARD_MASK.push(py * MATCH_GRID + px);
+  }
+}
+
+/** Each colour channel of the masked pixels, normalized to mean 0 and deviation 1; and the luminance deviation. */
+function channelNormalized(rgba: Uint8ClampedArray): { z: Float32Array; lumStd: number } {
+  const n = SCOREBOARD_MASK.length;
+  const z = new Float32Array(n * 3);
+  let lum = 0;
+  let lumSq = 0;
+  for (let c = 0; c < 3; c++) {
+    let sum = 0;
+    let sq = 0;
+    SCOREBOARD_MASK.forEach((p) => {
+      const v = rgba[p * 4 + c];
+      sum += v;
+      sq += v * v;
+    });
+    const mean = sum / n;
+    const std = Math.sqrt(Math.max(0, sq / n - mean * mean)) + 1e-3;
+    SCOREBOARD_MASK.forEach((p, i) => {
+      z[i * 3 + c] = (rgba[p * 4 + c] - mean) / std;
+    });
+  }
+  for (const p of SCOREBOARD_MASK) {
+    const l = (rgba[p * 4] + rgba[p * 4 + 1] + rgba[p * 4 + 2]) / 3;
+    lum += l;
+    lumSq += l * l;
+  }
+  const lumMean = lum / n;
+  return { z, lumStd: Math.sqrt(Math.max(0, lumSq / n - lumMean * lumMean)) };
+}
+
+let scoreboardTemplates: { itemId: string; category: ItemCategory; z: Float32Array }[] | null = null;
+
+/** Shop tab of a dimmed tier corner (weapon orange, vitality green, spirit purple), null for anything else. */
+function scoreboardCornerCategory(r: number, g: number, b: number): ItemCategory | null {
+  if (r > g + 20 && g > b + 30 && b < 45) return 'weapon';
+  if (g > r + 10 && g > b + 40 && b < 45) return 'vitality';
+  if (b > g + 25 && r > g + 15) return 'spirit';
+  return null;
+}
+
+/** The scoreboard icon at (x, y) on the 1080p canvas: best item of its shop tab, its error and the runner-up's. */
+function matchScoreboardCell(ctx: CanvasRenderingContext2D, x: number, y: number) {
+  const size = SCOREBOARD_ICON;
+  const data = ctx.getImageData(x, y, size, size).data;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  for (let py = 1; py < 5; py++) {
+    for (let px = size - 6; px < size - 2; px++) {
+      const i = (py * size + px) * 4;
+      r += data[i];
+      g += data[i + 1];
+      b += data[i + 2];
+    }
+  }
+  const category = scoreboardCornerCategory(r / 16, g / 16, b / 16);
+  if (!category) return null;
+  const { z, lumStd } = channelNormalized(areaDownsample(data, size, size));
+  if (lumStd < SCOREBOARD_MIN_STD) return null;
+  let best: string | null = null;
+  let bestError = Infinity;
+  let secondError = Infinity;
+  for (const tpl of scoreboardTemplates ?? []) {
+    if (tpl.category !== category) continue;
+    let diff = 0;
+    for (let i = 0; i < z.length; i++) diff += Math.abs(z[i] - tpl.z[i]);
+    // Same scale as the other matches: ~30 per unit of normalized deviation
+    const error = (diff / z.length) * 30;
+    if (error < bestError) {
+      secondError = bestError;
+      bestError = error;
+      best = tpl.itemId;
+    } else if (error < secondError) {
+      secondError = error;
+    }
+  }
+  return best ? { itemId: best, error: bestError, secondError } : null;
+}
+
+const isScoreboardMatch = (m: ReturnType<typeof matchScoreboardCell>) =>
+  m !== null && m.error <= SCOREBOARD_MATCH_MAX && m.secondError - m.error >= SCOREBOARD_MATCH_MARGIN;
+
+/**
+ * One player's items: the column is aligned on its first icon (+0/+1 px, the measured row offsets), then each icon is
+ * read where the grid puts it, or 1 px around (the 34.5 px pitch falls between pixels), until the first empty cell.
+ */
+function readScoreboardColumn(ctx: CanvasRenderingContext2D, x0: number): string[] | null {
+  let anchor: { dx: number; dy: number; error: number } | null = null;
+  for (const dx of [0, 1]) {
+    for (const dy of SCOREBOARD_DY) {
+      const m = matchScoreboardCell(ctx, x0 + dx, SCOREBOARD_Y + dy);
+      if (isScoreboardMatch(m) && (!anchor || m!.error < anchor.error)) anchor = { dx, dy, error: m!.error };
+    }
+  }
+  if (!anchor) return null;
+  const items: string[] = [];
+  for (let i = 0; i < SCOREBOARD_MAX_ITEMS; i++) {
+    const x = Math.round(x0 + anchor.dx + (i % 2) * SCOREBOARD_PITCH);
+    const y = Math.round(SCOREBOARD_Y + anchor.dy + Math.floor(i / 2) * SCOREBOARD_PITCH);
+    let best = matchScoreboardCell(ctx, x, y);
+    if (!best || best.error > SCOREBOARD_CLEAR_MATCH) {
+      for (const [ox, oy] of [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]) {
+        const m = matchScoreboardCell(ctx, x + ox, y + oy);
+        if (m && (!best || m.error < best.error)) best = m;
+      }
+    }
+    if (!isScoreboardMatch(best)) break;
+    items.push(best!.itemId);
+  }
+  return items;
+}
+
+/**
+ * The scoreboard (Tab held) on the 1080p canvas, undefined when fewer than SCOREBOARD_MIN_COLUMNS columns start with
+ * an item (no scoreboard, or no items yet: nothing to learn).
+ * shortcut: measured on 16:9 captures only (2560x1440, Sapphire); other layouts are not read until real captures exist.
+ */
+function readScoreboard(ctx: CanvasRenderingContext2D, templates: ItemIconTemplate[]): ScoreboardReading | undefined {
+  if (!scoreboardTemplates) {
+    scoreboardTemplates = templates.map((tpl) => ({
+      itemId: tpl.itemId,
+      category: tpl.category,
+      z: channelNormalized(tpl.rgba).z,
+    }));
+  }
+  const side = (x: number) => [0, 1, 2, 3, 4, 5].map((i) => readScoreboardColumn(ctx, x + i * 88));
+  const allies = side(SCOREBOARD_X.allies);
+  const enemies = side(SCOREBOARD_X.enemies);
+  const readable = [...allies, ...enemies].filter((column) => column !== null).length;
+  return readable >= SCOREBOARD_MIN_COLUMNS ? { allies, enemies } : undefined;
 }
 
 /**
@@ -2233,6 +2406,18 @@ export async function analyzeDeadlockScreen(
         );
       }
 
+      // Scoreboard (Tab held): the items of every player
+      const scoreboard =
+        isDeadlockTopBarVisible && normalized.layout.name === '16:9' ? readScoreboard(fullCtx, itemTemplates) : undefined;
+      if (scoreboard) {
+        const column = (items: string[] | null) => (items ? items.join(',') || '-' : '?');
+        debugLogs.push(
+          `Tableau des scores : alliés [${scoreboard.allies.map(column).join(' | ')}] ennemis [${scoreboard.enemies
+            .map(column)
+            .join(' | ')}]`
+        );
+      }
+
       const detectedAllyIds = validAllies.filter((id) => id !== detectedHeroId);
       const inventoryScanned = isDeadlockTopBarVisible || totalOccupiedSlots > 0;
       const confidence =
@@ -2263,6 +2448,7 @@ export async function analyzeDeadlockScreen(
         allyDead: isDeadlockTopBarVisible ? [...allyDead] : undefined,
         enemyDead: isDeadlockTopBarVisible ? [...enemyDead] : undefined,
         topBar: cachedTopBar,
+        scoreboard,
         mySlotIndex,
         frameWidth: rawW,
         frameHeight: rawH,

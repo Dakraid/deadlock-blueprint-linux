@@ -45,6 +45,9 @@ export type MatchPatch = Partial<
 >;
 
 /** Who is alive in each slot of the top bar, from my team's point of view (slots go by lane pairs). */
+/** The items of each enemy hero (hero id → item ids), as the scoreboard showed them last. */
+export type EnemyItems = Record<string, string[]>;
+
 export interface TeamBoard {
   allies: { heroId: string | null; dead: boolean }[]; // 6 slots, hero voted over the match
   enemies: { heroId: string | null; dead: boolean }[];
@@ -73,6 +76,8 @@ export interface MatchUpdate {
   changes: string[]; // short summary of what changed
   /** Who killed me and what they owned (death cam), only on the scans where it changed. */
   threats?: Threats;
+  /** The items of each enemy hero read on the scoreboard (Tab held), only on the scans where they changed. */
+  enemyItems?: EnemyItems;
   /** Capture whose format the scanner is not calibrated for: nothing was applied. */
   formatIssue?: { width: number; height: number };
   /** Deadlock is captured but no game screen has been recognized for a long time. */
@@ -88,6 +93,12 @@ const FOREIGN_INVENTORY_MAX_SCANS = 250; // ~90 s
 const KILL_EPISODE_GAP_MS = 20000;
 // A killer's item counts once it was read on this many death-cam frames (portraits and items are misread on some)
 const KILLER_ITEM_MIN_SCANS = 2;
+
+// A scoreboard column counts once the same items were read on this many scoreboard frames in a row
+const SCOREBOARD_SCANS = 2;
+// My own column must hold this many of my owned items: the scoreboard is from my team's point of view (none was
+// captured on the death cam yet, whose top bar shows the killer's team on the left)
+const SCOREBOARD_MY_ITEMS = 2;
 
 // Between two matches there is always longer than this without the top bar or the shop on screen
 export const NEW_MATCH_MIN_GAP_MS = 30000;
@@ -228,6 +239,12 @@ export class MatchTracker {
   private killers = new Map<string, { deaths: number; items: Map<string, number> }>();
   private killerStabilizer = new StableValue<string>(2, (id) => id);
   private lastKillerAt = -Infinity;
+  // Scoreboard (Tab held): each enemy slot's items, confirmed over SCOREBOARD_SCANS frames, then kept by hero
+  private scoreboardStabilizers = Array.from(
+    { length: 6 },
+    () => new StableValue<string[]>(SCOREBOARD_SCANS, (ids) => ids.join(','))
+  );
+  private enemyItems: EnemyItems = {};
   private formatStabilizer = new StableValue<boolean>(FORMAT_SCANS, (ok) => String(ok));
   private formatSupported = true;
   private deadlockSince: number | null = null;
@@ -241,6 +258,13 @@ export class MatchTracker {
     this.killers.clear();
     this.killerStabilizer.reset();
     this.lastKillerAt = -Infinity;
+    this.scoreboardStabilizers.forEach((stabilizer) => stabilizer.reset());
+    this.enemyItems = {};
+  }
+
+  /** The enemy items saved by the application (restart in the middle of a match). */
+  restoreEnemyItems(enemyItems: EnemyItems): void {
+    this.enemyItems = { ...enemyItems };
   }
 
   /** The threats saved by the application (restart in the middle of a match): the next death adds to them. */
@@ -414,7 +438,9 @@ export class MatchTracker {
     // For the same reason my hero among the enemies only means the killer's view once my team's votes confirm it.
     const allySlots = detection.allySlots;
     const enemySlots = detection.enemySlots;
-    if (detection.hudVisible && allySlots && enemySlots) {
+    // The scoreboard (Tab held) puts a level badge over each portrait: one of 10 living portraits was misread on a
+    // real capture, so its frames do not vote
+    if (detection.hudVisible && allySlots && enemySlots && !detection.scoreboard) {
       if (!this.isFlippedView(allySlots, enemySlots, activeHeroId)) {
         this.allyVoter.push(allySlots);
         this.enemyVoter.push(enemySlots);
@@ -457,6 +483,32 @@ export class MatchTracker {
       };
     }
     let lanePair = mySlot >= 0 ? Math.floor(mySlot / 2) : -1;
+
+    // Scoreboard (Tab held): each enemy's items, by the hero voted in its slot. Only from my team's point of view: not
+    // a flipped top bar, and once I own SCOREBOARD_MY_ITEMS items, my own column must hold them
+    const scoreboard = detection.scoreboard;
+    if (scoreboard && allySlots && enemySlots && !this.isFlippedView(allySlots, enemySlots, activeHeroId)) {
+      const myColumn = mySlot >= 0 ? scoreboard.allies[mySlot] : null;
+      const mine = state.ownedItems.length < SCOREBOARD_MY_ITEMS || overlap(myColumn ?? [], state.ownedItems) >= SCOREBOARD_MY_ITEMS;
+      if (mine) {
+        const before = JSON.stringify(this.enemyItems);
+        scoreboard.enemies.forEach((items, i) => {
+          const heroId = votedEnemies[i];
+          if (!heroId || !items) return;
+          if (this.scoreboardStabilizers[i].push(items)) {
+            this.enemyItems = { ...this.enemyItems, [heroId]: items };
+          }
+        });
+        if (JSON.stringify(this.enemyItems) !== before) {
+          update.enemyItems = this.enemyItems;
+          event(
+            `Tableau des scores : ${Object.entries(this.enemyItems)
+              .map(([heroId, items]) => `${heroId}=[${items.join(',')}]`)
+              .join(' ')}`
+          );
+        }
+      }
+    }
 
     if (!isWatchingOtherHero) {
       let stableAlly: { partnerId?: string; laneColor?: LaneColor } | undefined;

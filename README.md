@@ -39,15 +39,17 @@ Every 350 ms the app reads the image of the Deadlock window and recognizes:
 - **Your allies, the 6 enemies, your lane and your lane partner**, on the Amber or Sapphire side. Each portrait is voted over the whole match, so a single misread frame (a respawn timer, a low-HP banner) changes nothing.
 - **Your inventory** (12 slots, padlocked ones included), even with the shop open and with items on cooldown.
 - **Your souls**, read by OCR, fully offline.
+- **Every player's items when you hold Tab** (scoreboard, 16:9 screens): measured on 2560×1440 captures.
 
 ### 🛒 What to buy
 - **Meta builds from real statistics**: the items most bought by high-rank players (Oracle+, last 30 days) and the published build with the best win rate, from [deadlock-api.com](https://deadlock-api.com). **Updated every week**, without a new version of the app.
 - **Now**: what to do right now, from who is dead on each side, the match clock, both teams' souls and your matchups: buy or farm, push or take the Mid Boss when your team has the advantage, play safe when it is down, go help a lane where an ally is alone against two, who to focus and whose 1v1s to avoid, with their portraits. A **Mid Boss taken** button counts its respawn.
-- **Counter the enemies**: a card per enemy with their ultimate and the 3 best items against them.
+- **Counter the enemies**: a card per enemy with their ultimate, the 3 best items against them and, once you have held Tab, the items they own. An enemy item that counters your hero brings its answer to the top.
 - **"Buy right now"**: your next items in order, with their shop tab and how many souls you are short. The **#1 stays fixed** until you buy it.
 - **Why this item?** "Bought in 76% of Oracle+ Infernus games · 47.8% win rate with it · usually bought around 18:42", or "Anti-heal against Baba".
 - **Counters** against your lane opponents and the enemy team (anti-heal, resists, CC immunity…), plus the items that actually win more against each enemy for your hero (high-rank games).
 - **Who to avoid, who to focus**: each enemy is rated from your hero's real win rate against them (in lane for your lane opponents): *Avoid 1v1s*, *Even* or *Focus*, with the lane outlook against your opponents and how your hero does with your lane partner. **Click an enemy who is fed**: their counters come first, and the overlay reminds you not to take their 1v1s.
+- **Desired items**: click ★ on any item (or pick one in **Item details**) and the route makes room for it.
 - **Never an item you already own**, nor a component already upgraded.
 - **Inventory full?** Each recommendation says **which item to sell** (the least useful for your build), or **which one it replaces** for an upgrade.
 
@@ -126,6 +128,7 @@ Hero skins whose portrait differs a lot from the default one may be misread on s
 | <kbd>Alt</kbd> + <kbd>L</kbd> | **Ghost mode**: clicks go through the overlay |
 | <kbd>Alt</kbd> + <kbd>K</kbd> | **Arrange the overlay**: move, resize, opacity, size (press again to go back to the game) |
 | <kbd>Alt</kbd> + <kbd>S</kbd> | Scan now |
+| <kbd>Alt</kbd> + <kbd>P</kbd> | **Debug capture**: saves the captured frame (Diagnostics tab) |
 
 ### 🖱️ Fixing things by hand
 - **Click your hero** (top left) and pick the right one: it is then locked for the match.

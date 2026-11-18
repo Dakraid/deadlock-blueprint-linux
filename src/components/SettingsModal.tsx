@@ -97,10 +97,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
       <Section icon={<ZoomIn className="w-3.5 h-3.5" />} title={t('settings.uiSize')}>
         <SegmentedControl
+          size="sm"
           value={uiScale}
           onChange={onUiScaleChange}
           options={[
             { value: 'auto', label: t('settings.uiSizeAuto') },
+            { value: '50', label: '50%' },
+            { value: '70', label: '70%' },
+            { value: '85', label: '85%' },
             { value: '100', label: '100%' },
             { value: '115', label: '115%' },
             { value: '130', label: '130%' },

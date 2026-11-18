@@ -6,6 +6,7 @@ import type { VisionDetectionResult } from '../services/visionScanner';
 import { isSupportedFormat } from '../services/matchTracker';
 import type { DeadlockHero } from '../data/deadlockData';
 import { Button, Card, SectionHeader } from '../ui';
+import { DebugCaptures } from './DebugCaptures';
 
 interface DiagnosticsTabProps {
   heroes: DeadlockHero[];
@@ -15,6 +16,9 @@ interface DiagnosticsTabProps {
   onReport: () => void;
   lastCaptureUrl: string | null;
   lastDetection: VisionDetectionResult | null;
+  onDebugCapture: () => void;
+  /** Changes when a debug capture was saved */
+  debugCaptureTick: number;
 }
 
 const Row: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
@@ -39,6 +43,8 @@ export const DiagnosticsTab: React.FC<DiagnosticsTabProps> = ({
   onReport,
   lastCaptureUrl,
   lastDetection,
+  onDebugCapture,
+  debugCaptureTick,
 }) => {
   const { t } = useI18n();
   const heroName = (id: string | null | undefined) => (id ? heroes.find((h) => h.id === id)?.name ?? id : '?');
@@ -120,6 +126,7 @@ export const DiagnosticsTab: React.FC<DiagnosticsTabProps> = ({
           </div>
         )}
       </Card>
+      {window.electronAPI && <DebugCaptures onCapture={onDebugCapture} tick={debugCaptureTick} />}
     </div>
   );
 };

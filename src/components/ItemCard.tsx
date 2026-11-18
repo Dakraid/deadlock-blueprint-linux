@@ -2,7 +2,7 @@ import React from 'react';
 import { DeadlockItem } from '../data/deadlockData';
 import { Check, Zap } from 'lucide-react';
 import { ItemArtworkIcon } from './DeadlockIcons';
-import { ShopTabMarker } from './ShopHelpers';
+import { DesireButton, ShopTabMarker } from './ShopHelpers';
 import { useI18n } from '../i18n';
 import { Badge, cx } from '../ui';
 
@@ -13,6 +13,9 @@ interface ItemCardProps {
   compact?: boolean;
   highlightReasons?: string[];
   urgencyBadge?: string;
+  /** Detailed card only: the ★ desired toggle */
+  isDesired?: boolean;
+  onToggleDesired?: (id: string) => void;
 }
 
 // Each shop tab tints its cards, as the game's shop tiles
@@ -39,6 +42,8 @@ export const ItemCard: React.FC<ItemCardProps> = ({
   onToggleOwned,
   compact = false,
   highlightReasons,
+  isDesired = false,
+  onToggleDesired,
 }) => {
   const { t } = useI18n();
   const categoryStyles = CATEGORY_STYLES[item.category];
@@ -140,9 +145,12 @@ export const ItemCard: React.FC<ItemCardProps> = ({
           </div>
         </div>
 
-        <Badge tone="info" className="text-body tabular-nums shrink-0">
-          {item.cost}
-        </Badge>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {onToggleDesired && <DesireButton desired={isDesired} onToggle={() => onToggleDesired(item.id)} />}
+          <Badge tone="info" className="text-body tabular-nums">
+            {item.cost}
+          </Badge>
+        </div>
       </div>
 
       <p className="text-body text-ink mb-1.5 leading-snug">{item.hint}</p>

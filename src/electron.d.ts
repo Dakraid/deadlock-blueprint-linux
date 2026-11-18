@@ -1,3 +1,5 @@
+import type { DebugCapture } from './services/debugCaptures';
+
 /** Window or screen the player chose in the xdg-desktop-portal picker, for the live capture stream. */
 export interface CaptureSourceInfo {
   id: string;
@@ -64,6 +66,15 @@ declare global {
         info: () => Promise<{ latest: string | null }>;
         deleteAll: () => Promise<boolean>;
       };
+      /** Debug captures (src/services/debugCaptures.ts): PNG + JSON files written by the main process. */
+      debugCaptures: {
+        save: (data: ArrayBuffer, meta: Omit<DebugCapture, 'id'>) => Promise<string>;
+        list: () => Promise<DebugCapture[]>;
+        annotate: (capture: DebugCapture) => Promise<boolean>;
+        image: (id: string) => Promise<Uint8Array | null>;
+        remove: (id: string) => Promise<boolean>;
+        openFolder: () => Promise<string>;
+      };
       createProblemReport: (payload: { info: string; state: string; includeLog: boolean }) => Promise<ProblemReportResult>;
       updates: {
         check: () => Promise<UpdateStatus>;
@@ -72,6 +83,7 @@ declare global {
         onStatus: (callback: (status: UpdateStatus) => void) => () => void;
       };
       onOverlayStateChanged: (callback: (state: OverlayState) => void) => () => void;
+      onTriggerDebugCapture: (callback: () => void) => () => void;
       onTriggerShortcutScan: (callback: () => void) => () => void;
     };
   }
