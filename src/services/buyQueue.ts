@@ -47,7 +47,7 @@ export interface BuyQueueInput extends InventoryView {
   t: Translate;
   investment: InvestmentProgress;
   /** The hero's statistics of an item: pick rate and usual buy time (getHeroItemStat) */
-  stat: (itemId: string) => { pickRate: number; buyTimeS: number } | undefined;
+  stat: (itemId: string) => { pickRate: number; buyTimeS: number; winRate?: number } | undefined;
   /** The match clock in seconds when it is read */
   clockS?: number;
   /** Laning is over (isLaneOver, latched for the match) */

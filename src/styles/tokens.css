@@ -50,14 +50,17 @@
 
   /* Type scale (measured-type: scripts/type-scale.js --base 0.8125rem --ratio 1.2 --steps 3, all fixed, every step
      at least 1.15x the one below, sizes in rem so they follow the zoom). Each size has its own line height. */
-  --text-small: 0.6875rem; /* 11px: badges, captions, secondary lines (13 / 1.2) */
-  --text-small-leading: 1rem;
-  --text-body: 0.8125rem; /* 13px: default text, buttons */
-  --text-body-leading: 1.125rem;
-  --text-title: 0.975rem; /* 15.6px: item and card names, section titles */
-  --text-title-leading: 1.25rem;
-  --text-heading: 1.17rem; /* 18.7px: dialog titles */
-  --text-heading-leading: 1.5rem;
+  /* Zoomed out (overlay size 85 / 70 %, Ctrl+- in the main window: --ui-zoom, set by App.tsx), each size keeps a floor
+     in screen pixels: 11px text at 70 % was 7.7 screen pixels, unreadable. The steps get closer, the text stays legible. */
+  --ui-zoom: 1;
+  --text-small: max(0.6875rem, 10px / var(--ui-zoom)); /* 11px: badges, captions, secondary lines (13 / 1.2) */
+  --text-small-leading: max(1rem, 14px / var(--ui-zoom));
+  --text-body: max(0.8125rem, 11px / var(--ui-zoom)); /* 13px: default text, buttons */
+  --text-body-leading: max(1.125rem, 15px / var(--ui-zoom));
+  --text-title: max(0.975rem, 12.5px / var(--ui-zoom)); /* 15.6px: item and card names, section titles */
+  --text-title-leading: max(1.25rem, 16px / var(--ui-zoom));
+  --text-heading: max(1.17rem, 14px / var(--ui-zoom)); /* 18.7px: dialog titles */
+  --text-heading-leading: max(1.5rem, 18px / var(--ui-zoom));
   --tracking-caps: 0.08em; /* uppercase labels (measured-type: caps +5% to +10%) */
   --tracking-display: 0.03em; /* Valve Pulp titles */
 

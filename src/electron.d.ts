@@ -45,6 +45,7 @@ declare global {
       overlayResize: (phase: 'start' | 'move' | 'end', dx?: number, dy?: number) => void;
       /** Overlay window only: zoom of its page, its window resized by the same factor. */
       setOverlayScale: (scale: number) => Promise<number>;
+      getZoomFactor?: () => number;
       /** Writes to the clipboard (item name for the shop search). */
       copyText: (text: string) => Promise<boolean>;
       /** A build code pasted from the game, base64 then zstd undone: the protobuf bytes, or null if it is not one. */

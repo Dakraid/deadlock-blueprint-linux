@@ -2586,6 +2586,23 @@ export function getHeroLateItems(heroId: string): string[] {
     .map(([id]) => id);
 }
 
+// Outside the build: only items a real share of the hero's players buy
+const TOP_ITEM_MIN_PICK_RATE = 0.1;
+
+/**
+ * The items players of this hero buy in 10 %+ of their games and win more with than the hero usually does, best
+ * smoothed win rate first: the alternatives to the build's own items (services/routes.ts). Weekly data, like the meta
+ * build itself.
+ */
+export function getHeroTopItems(heroId: string): string[] {
+  const hero = generatedHeroes()[heroId];
+  const stats = hero?.itemStats ?? {};
+  return Object.entries(stats)
+    .filter(([id, [pick, win]]) => ITEMS_DB[id] && pick >= TOP_ITEM_MIN_PICK_RATE && win > (hero?.winRate ?? 0))
+    .sort((a, b) => b[1][1] - a[1][1])
+    .map(([id]) => id);
+}
+
 export interface HeroImbueTarget {
   ability: AbilityKey;
   abilityName: string; // official name in the interface language

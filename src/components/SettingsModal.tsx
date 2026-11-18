@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { ExternalLink, FolderOpen, Github, Languages, LifeBuoy, RefreshCw, ScrollText, Trash2, ZoomIn } from 'lucide-react';
+import { ExternalLink, FolderOpen, Github, Languages, LifeBuoy, RefreshCw, Route, ScrollText, Trash2, ZoomIn } from 'lucide-react';
 import { useI18n, type Lang } from '../i18n';
 import type { AppInfo, UpdateStatus } from '../electron';
 import { getDataInfo } from '../data/dataSource';
 import { localeOf } from '../i18n/lang';
 import { Button, ModalShell, SectionHeader, SegmentedControl } from '../ui';
 import type { UiScale } from '../App';
+
+const ALT_MAX_CHOICES = [0, 1, 2, 3, 4, 5];
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -16,6 +18,11 @@ interface SettingsModalProps {
   updateStatus: UpdateStatus;
   uiScale: UiScale;
   onUiScaleChange: (scale: UiScale) => void;
+  /** How many alternatives each tier of the buy panel shows (services/routes.ts) */
+  altMax: number;
+  onAltMaxChange: (max: number) => void;
+  altHighMax: number;
+  onAltHighMaxChange: (max: number) => void;
   onReport: () => void;
 }
 
@@ -50,6 +57,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   updateStatus,
   uiScale,
   onUiScaleChange,
+  altMax,
+  onAltMaxChange,
+  altHighMax,
+  onAltHighMaxChange,
   onReport,
 }) => {
   const { t, lang } = useI18n();
@@ -95,6 +106,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             { value: '130', label: '130%' },
           ]}
         />
+      </Section>
+
+      <Section icon={<Route className="w-3.5 h-3.5" />} title={t('settings.altTitle')}>
+        {(
+          [
+            [t('settings.altNormal'), altMax, onAltMaxChange],
+            [t('settings.altHigh'), altHighMax, onAltHighMaxChange],
+          ] as const
+        ).map(([label, value, onChange]) => (
+          <div key={label} className="flex items-center justify-between gap-3">
+            <span className="text-body text-ink-soft">{label}</span>
+            <SegmentedControl
+              size="sm"
+              value={value}
+              onChange={onChange}
+              options={ALT_MAX_CHOICES.map((n) => ({ value: n, label: String(n) }))}
+            />
+          </div>
+        ))}
       </Section>
 
       <Section icon={<ScrollText className="w-3.5 h-3.5" />} title={t('settings.gameLogs')}>

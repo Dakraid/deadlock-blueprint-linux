@@ -9,6 +9,7 @@ import type { LaneColor, LaneMode } from '../data/deadlockData';
 import { getComponentIds, InventoryStatus } from './recommendations';
 import { ItemAbsence, ItemConfirmation, SlotVoter, StableValue } from './detectionStabilizer';
 import type { VisionDetectionResult } from './visionScanner';
+import type { Threats } from './routes';
 
 /** The part of the application state the scanner reads and updates. */
 export interface MatchSnapshot {
@@ -70,6 +71,8 @@ export interface MatchUpdate {
   /** Decisions for the game log, in order; 'restart': new match detected, the current game log is closed. */
   log: { kind: 'event' | 'restart'; text: string }[];
   changes: string[]; // short summary of what changed
+  /** Who killed me and what they owned (death cam), only on the scans where it changed. */
+  threats?: Threats;
   /** Capture whose format the scanner is not calibrated for: nothing was applied. */
   formatIssue?: { width: number; height: number };
   /** Deadlock is captured but no game screen has been recognized for a long time. */
@@ -78,6 +81,13 @@ export interface MatchUpdate {
 
 // Above any respawn timer: a "foreign" inventory still on screen after that really is mine (sold + bought)
 const FOREIGN_INVENTORY_MAX_SCANS = 250; // ~90 s
+
+// The death cam shows the killer's HUD for a few seconds, their portrait highlighted, with frames without highlight
+// in between: the same killer seen again within this time is the same death (respawns are shorter than a minute
+// for most of a game, and the rest of a long one is spent watching teammates, never an enemy)
+const KILL_EPISODE_GAP_MS = 20000;
+// A killer's item counts once it was read on this many death-cam frames (portraits and items are misread on some)
+const KILLER_ITEM_MIN_SCANS = 2;
 
 // Between two matches there is always longer than this without the top bar or the shop on screen
 export const NEW_MATCH_MIN_GAP_MS = 30000;
@@ -214,6 +224,10 @@ export class MatchTracker {
   );
   private lastTopBarAt = -Infinity;
   private pendingSouls: { value: number; since: number } | null = null;
+  // Death cam: each enemy who killed me, and how many frames showed each of their items
+  private killers = new Map<string, { deaths: number; items: Map<string, number> }>();
+  private killerStabilizer = new StableValue<string>(2, (id) => id);
+  private lastKillerAt = -Infinity;
   private formatStabilizer = new StableValue<boolean>(FORMAT_SCANS, (ok) => String(ok));
   private formatSupported = true;
   private deadlockSince: number | null = null;
@@ -224,6 +238,35 @@ export class MatchTracker {
     this.itemAbsence.reset();
     this.slotCountsStabilizer.reset();
     this.foreignInventoryStreak = 0;
+    this.killers.clear();
+    this.killerStabilizer.reset();
+    this.lastKillerAt = -Infinity;
+  }
+
+  /** The threats saved by the application (restart in the middle of a match): the next death adds to them. */
+  restoreThreats(threats: Threats): void {
+    for (const [heroId, { deaths, items }] of Object.entries(threats)) {
+      this.killers.set(heroId, { deaths, items: new Map(items.map((id) => [id, KILLER_ITEM_MIN_SCANS])) });
+    }
+  }
+
+  /** A death counted by hand ("Killed me" on an enemy's card); -1 takes one back. Returns the new threats. */
+  markKilledBy(heroId: string, delta = 1): Threats {
+    const killer = this.killers.get(heroId) ?? { deaths: 0, items: new Map<string, number>() };
+    killer.deaths = Math.max(0, killer.deaths + delta);
+    this.killers.set(heroId, killer);
+    return this.threats();
+  }
+
+  /** Who killed me this match, and the items read in their inventory on the death cam (upgraded components left out). */
+  threats(): Threats {
+    return Object.fromEntries(
+      [...this.killers].map(([heroId, { deaths, items }]) => {
+        const seen = [...items].filter(([, scans]) => scans >= KILLER_ITEM_MIN_SCANS).map(([id]) => id);
+        const consumed = new Set(seen.flatMap((id) => [...getComponentIds(id)]));
+        return [heroId, { deaths, items: seen.filter((id) => !consumed.has(id)).sort() }];
+      })
+    );
   }
 
   private resetBoard(): void {
@@ -513,6 +556,38 @@ export class MatchTracker {
       : ignoreInventory
       ? 'inventaire étranger (plusieurs de mes objets absents et objets inconnus)'
       : '';
+    // Death cam: another hero highlighted who is one of my voted enemies, on the killer's top bar (my enemies on the
+    // left), is my killer. A spectated teammate is an ally, and my own portrait misread as an enemy keeps my team on
+    // the left. One death per episode, and the inventory on those frames is theirs: what they own against me.
+    // Not measured on real frames yet: the recorded games (tests/replays) hold no such frame, where the death screen
+    // mostly shows a watched teammate. "Killed me" on an enemy's card (markKilledBy) counts a death by hand.
+    const killerId =
+      isWatchingOtherHero &&
+      votedEnemies.includes(heroOnScreen) &&
+      allySlots &&
+      enemySlots &&
+      this.isFlippedView(allySlots, enemySlots, activeHeroId)
+        ? heroOnScreen
+        : undefined;
+    if (killerId) {
+      const before = JSON.stringify(this.threats());
+      if (this.killerStabilizer.push(killerId) === killerId) {
+        const killer = this.killers.get(killerId) ?? { deaths: 0, items: new Map<string, number>() };
+        this.killers.set(killerId, killer);
+        if (now - this.lastKillerAt > KILL_EPISODE_GAP_MS) {
+          killer.deaths++;
+          event(`Tué par ${killerId} (${killer.deaths} fois cette partie)`);
+        }
+        this.lastKillerAt = now;
+        if (canReadInventory) {
+          for (const id of detection.detectedOwnedItemIds) killer.items.set(id, (killer.items.get(id) ?? 0) + 1);
+        }
+      }
+      if (JSON.stringify(this.threats()) !== before) update.threats = this.threats();
+    } else {
+      this.killerStabilizer.reset();
+    }
+
     if (ignoreReason !== this.inventoryIgnoreReason) {
       event(ignoreReason ? `Inventaire ignoré : ${ignoreReason}` : 'Inventaire de nouveau pris en compte');
       this.inventoryIgnoreReason = ignoreReason;

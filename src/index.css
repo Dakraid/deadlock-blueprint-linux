@@ -16,6 +16,9 @@
     user-select: none;
     font-family: var(--font-body);
     font-kerning: normal;
+    /* Glyphs placed on fractions of a pixel, without hinting: at a fractional zoom (80 %, overlay 85 / 70 %) hinted
+       glyphs snapped to whole pixels gave uneven letter widths and spacing */
+    text-rendering: geometricPrecision;
   }
 
   /* Valve Pulp and Valve Occult come in one weight each: no faked bold or italic */

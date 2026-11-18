@@ -16,6 +16,7 @@ import {
   Shuffle,
   Swords,
   Terminal,
+  TriangleAlert,
   Undo2,
   Unlock,
   UserPlus,
@@ -37,6 +38,7 @@ import {
   getHeroMetaInfo,
   getHeroesDb,
   getItemsDb,
+  getHeroTopItems,
   getLanes,
   rankLabel,
 } from './data/deadlockData';
@@ -55,7 +57,17 @@ import {
   isStaleLock,
   withLockedFirst,
 } from './services/recommendations';
-import { BuyMode, computeBuyQueue, getSpikeSafeSlotPlans, isLaneOver } from './services/buyQueue';
+import { BuyMode, getSpikeSafeSlotPlans, isLaneOver } from './services/buyQueue';
+import {
+  ANSWERS,
+  DEFAULT_MAX_HIGH,
+  DEFAULT_MAX_NORMAL,
+  NEMESIS_DEATHS,
+  RouteAlt,
+  Threats,
+  computeRoutes,
+  routeProgress,
+} from './services/routes';
 import {
   inBuyOrder,
   investmentItems,
@@ -191,6 +203,9 @@ const NOW_STYLE: Record<NowAdvice['kind'], { icon: string; className: string }> 
   avoid: { icon: '🚫', className: BACK_OFF },
 };
 
+// Overlay: small section labels (Inter caps), neutral unless a priority colour is added
+const OVERLAY_LABEL = 'block text-small font-bold uppercase tracking-caps text-ink-muted';
+
 // Interface size of the main window (Settings)
 const UI_SCALE_KEY = 'dl_uiScale';
 const UI_SCALES = ['auto', '100', '115', '130'] as const;
@@ -200,6 +215,32 @@ export type UiScale = (typeof UI_SCALES)[number];
 const HERO_LOCKED_KEY = 'dl_heroLocked';
 const FED_ENEMIES_KEY = 'dl_fedEnemies';
 const SOLD_ITEMS_KEY = 'dl_soldItems';
+// Who killed me this match and what they owned (services/matchTracker.ts), shared with the overlay
+const THREATS_KEY = 'dl_threats';
+// Main-route items replaced by a bought alternative this match (services/routes.ts), shared with the overlay
+const REPLACED_ITEMS_KEY = 'dl_replacedItems';
+// How many alternatives each tier shows (Settings), shared with the overlay
+const ALT_MAX_KEY = 'dl_altMax';
+const ALT_HIGH_MAX_KEY = 'dl_altHighMax';
+// Notices (an enemy keeps killing me): shown in both windows, gone on their own (the overlay cannot be clicked in
+// ghost mode, and never takes the focus)
+const NOTICES_KEY = 'dl_notices';
+const NOTICE_TTL_MS = 15000;
+interface Notice {
+  id: string;
+  at: number; // Date.now() when it was raised
+  heroId: string;
+  deaths: number;
+}
+
+function readJson<T>(key: string, fallback: T): T {
+  try {
+    return JSON.parse(localStorage.getItem(key) ?? 'null') ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 // Who is dead in the top bar right now (services/matchTracker.ts), written by the main window only when it changes
 const BOARD_KEY = 'dl_board';
 // Mid Boss kills marked by hand this match (services/nowAdvice.ts), shared with the overlay
@@ -317,6 +358,35 @@ export function App() {
     setFedEnemyIds(ids);
     localStorage.setItem(FED_ENEMIES_KEY, JSON.stringify(ids));
   }, []);
+  // Who killed me and what they owned, the main-route items I replaced, and the notices: cleared at a new match
+  const [threats, setThreats] = useState<Threats>(() => readJson(THREATS_KEY, {}));
+  const storeThreats = useCallback((next: Threats) => {
+    setThreats(next);
+    localStorage.setItem(THREATS_KEY, JSON.stringify(next));
+  }, []);
+  const [replacedItems, setReplacedItems] = useState<string[]>(() => readJson(REPLACED_ITEMS_KEY, []));
+  const storeReplacedItems = useCallback((ids: string[]) => {
+    setReplacedItems(ids);
+    localStorage.setItem(REPLACED_ITEMS_KEY, JSON.stringify(ids));
+  }, []);
+  const [notices, setNotices] = useState<Notice[]>(() => readJson(NOTICES_KEY, []));
+  const storeNotices = useCallback((update: (prev: Notice[]) => Notice[]) => {
+    setNotices((prev) => {
+      const next = update(prev);
+      localStorage.setItem(NOTICES_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+  const [altMax, setAltMax] = useState(() => readStoredNumber(ALT_MAX_KEY, DEFAULT_MAX_NORMAL, 0, 5));
+  const [altHighMax, setAltHighMax] = useState(() => readStoredNumber(ALT_HIGH_MAX_KEY, DEFAULT_MAX_HIGH, 0, 5));
+  const changeAltMax = (value: number) => {
+    setAltMax(value);
+    storeNumber(ALT_MAX_KEY, value);
+  };
+  const changeAltHighMax = (value: number) => {
+    setAltHighMax(value);
+    storeNumber(ALT_HIGH_MAX_KEY, value);
+  };
   const [board, setBoard] = useState<TeamBoard | null>(() => {
     try {
       return JSON.parse(localStorage.getItem(BOARD_KEY) || 'null');
@@ -422,6 +492,11 @@ export function App() {
         setOwnedItems(JSON.parse(localStorage.getItem('dl_ownedItems') || '[]'));
         setSoldItems(JSON.parse(localStorage.getItem(SOLD_ITEMS_KEY) || '[]'));
         setFedEnemyIds(JSON.parse(localStorage.getItem(FED_ENEMIES_KEY) || '[]'));
+        setThreats(readJson(THREATS_KEY, {}));
+        setReplacedItems(readJson(REPLACED_ITEMS_KEY, []));
+        setNotices(readJson(NOTICES_KEY, []));
+        setAltMax(readStoredNumber(ALT_MAX_KEY, DEFAULT_MAX_NORMAL, 0, 5));
+        setAltHighMax(readStoredNumber(ALT_HIGH_MAX_KEY, DEFAULT_MAX_HIGH, 0, 5));
         setBoard(JSON.parse(localStorage.getItem(BOARD_KEY) || 'null'));
         setMidBoss(JSON.parse(localStorage.getItem(MID_BOSS_KEY) || 'null'));
         setLockedNext(JSON.parse(localStorage.getItem('dl_lockedNext') || 'null'));
@@ -554,14 +629,16 @@ export function App() {
 
   // Late items beyond the build (the queue goes on with them once the build runs out)
   const lateItems = useMemo(() => getHeroLateItems(myHeroId), [myHeroId]);
+  const topItems = useMemo(() => getHeroTopItems(myHeroId), [myHeroId]);
   const sellCandidates = useMemo(
     () =>
       getSellCandidates(
         inventoryStatus,
         activeBuild,
-        new Set([...tacticalPlan.priorityItems.map((r) => r.item.id), ...lateItems])
+        // ...and the alternatives (services/routes.ts): one just bought must not be the first item to sell
+        new Set([...tacticalPlan.priorityItems.map((r) => r.item.id), ...lateItems, ...topItems, ...Object.values(ANSWERS).flat()])
       ),
-    [inventoryStatus, activeBuild, tacticalPlan.priorityItems, lateItems]
+    [inventoryStatus, activeBuild, tacticalPlan.priorityItems, lateItems, topItems]
   );
 
   // Owned items plus the components they consumed (owning Greater Expansion means Mystic Expansion is done)
@@ -592,14 +669,21 @@ export function App() {
   );
 
   /**
-   * Smart Next-To-Buy Queue (services/buyQueue.ts): key core items first, counters placed by the time they are due, the
-   * build in its usual buy order, the 4,800 spike nudge. Lane-only counters need a real lane threat and leave with
-   * laning. Every item already owned (detected or marked by hand), and every component consumed by an owned
-   * upgrade, is skipped.
+   * The routes (services/routes.ts). Main route: the build's own items in the buy queue's order (services/buyQueue.ts:
+   * key core items first, usual buy order, the 4,800 spike nudge). Alternatives in two tiers: high priority (fed
+   * enemy, an enemy who keeps killing me, an enemy item that answers my hero) and normal (the counters that are due,
+   * optional items of the build, what the hero's players buy outside it). Every item already owned (detected or
+   * marked by hand), and every component consumed by an owned upgrade, is skipped.
    */
-  const { queue: rawNextToBuyQueue, counters: purchaseCounters } = useMemo(
+  const routes = useMemo(
     () =>
-      computeBuyQueue({
+      computeRoutes({
+        myThreatTags: myHero.threatTags,
+        threats,
+        topItems,
+        replacedItems,
+        maxNormal: altMax,
+        maxHigh: altHighMax,
         build: activeBuild,
         priorityItems: tacticalPlan.priorityItems,
         matchupAlerts: tacticalPlan.matchupAlerts,
@@ -619,6 +703,12 @@ export function App() {
         mode: buyMode,
       }),
     [
+      myHero,
+      threats,
+      topItems,
+      replacedItems,
+      altMax,
+      altHighMax,
       buyMode,
       activeBuild,
       tacticalPlan.priorityItems,
@@ -638,6 +728,20 @@ export function App() {
       lateItems,
     ]
   );
+  const { main: rawNextToBuyQueue, counters: purchaseCounters } = routes;
+  const alternatives = useMemo(() => [...routes.high, ...routes.normal], [routes]);
+  const buildProgress = useMemo(() => routeProgress(activeBuild, ownedItems), [activeBuild, ownedItems]);
+
+  // An alternative bought (seen by the scanner or marked by hand) takes the place of the main-route item it named
+  const shownAltsRef = useRef<RouteAlt[]>([]);
+  useEffect(() => {
+    if (isDedicatedOverlayWindow) return;
+    const taken = shownAltsRef.current
+      .filter((alt) => alt.replaces && ownedItems.includes(alt.item.id) && !replacedItems.includes(alt.replaces))
+      .map((alt) => alt.replaces!);
+    if (taken.length > 0) storeReplacedItems([...replacedItems, ...taken]);
+    shownAltsRef.current = alternatives;
+  }, [isDedicatedOverlayWindow, ownedItems, alternatives, replacedItems, storeReplacedItems]);
 
   // The #1 stays locked until it is bought or skipped (or the hero/build changes):
   // new counters or a re-ordering of the queue only affect #2 and beyond.
@@ -665,10 +769,14 @@ export function App() {
 
   // What each displayed recommendation does to the inventory: an upgrade replaces its component; with a full
   // inventory, the other ones each need an owned item sold first (the weakest for #1, the next one for #2...)
-  const slotPlans = useMemo(
-    () => getSpikeSafeSlotPlans(nextToBuyQueue.slice(0, 6), { ownedItems, investedItems, inventoryStatus, sellCandidates }),
-    [nextToBuyQueue, ownedItems, investedItems, inventoryStatus, sellCandidates]
-  );
+  // An alternative is bought instead of the route's next item: each one gets the plan of a #1
+  const slotPlans = useMemo(() => {
+    const inventory = { ownedItems, investedItems, inventoryStatus, sellCandidates };
+    return new Map([
+      ...alternatives.flatMap((alt) => [...getSpikeSafeSlotPlans([alt], inventory)]),
+      ...getSpikeSafeSlotPlans(nextToBuyQueue.slice(0, 6), inventory),
+    ]);
+  }, [nextToBuyQueue, alternatives, ownedItems, investedItems, inventoryStatus, sellCandidates]);
 
   // When the Mid Boss is back after a kill marked by hand
   const midBossBack = midBossBackAt(midBoss);
@@ -763,6 +871,14 @@ export function App() {
   }, [nextToBuyQueue, slotPlans, currentSouls]);
 
   useEffect(() => {
+    const list = (alts: RouteAlt[]) => alts.map((alt) => `${alt.item.id}${alt.replaces ? `>${alt.replaces}` : ''}`).join(',');
+    const killers = Object.entries(threats)
+      .map(([id, threat]) => `${id}×${threat.deaths}[${threat.items.join(',')}]`)
+      .join(' ');
+    logState('ROUTES', `haute=[${list(routes.high)}] alternatives=[${list(routes.normal)}] tueurs=${killers || '-'}`);
+  }, [routes, threats]);
+
+  useEffect(() => {
     const deadSlots = (slots: TeamBoard['allies']) =>
       slots.flatMap((s, i) => (s.dead ? [`${i}:${s.heroId ?? '?'}`] : [])).join(',');
     // Written when it changes: the clock only to the minute, or this line would come every second
@@ -818,14 +934,34 @@ export function App() {
     storeSoldItems([]);
     setInventoryStatus(null);
     storeFedEnemies([]);
+    storeThreats({});
+    storeReplacedItems([]);
+    storeNotices(() => []);
     storeMidBoss(null);
     setLaneOverLatched(false);
     // A new match starts from the queue's head, not from the item locked at the end of the last one
     setLockedNext(null);
     localStorage.removeItem('dl_lockedNext');
-  }, [storeFedEnemies, storeMidBoss, storeSoldItems]);
+  }, [storeFedEnemies, storeMidBoss, storeSoldItems, storeThreats, storeReplacedItems, storeNotices]);
 
   const boardJsonRef = useRef<string>(JSON.stringify(board));
+
+  /** New threats (death cam, or "Killed me" by hand): a notice once an enemy has killed me NEMESIS_DEATHS times. */
+  const threatsRef = useRef(threats);
+  threatsRef.current = threats;
+  // Restart in the middle of a match: the tracker counts on from the saved threats
+  useEffect(() => trackerRef.current.restoreThreats(threatsRef.current), []);
+  const applyThreats = useCallback(
+    (next: Threats) => {
+      for (const [heroId, { deaths }] of Object.entries(next)) {
+        if (deaths >= NEMESIS_DEATHS && deaths > (threatsRef.current[heroId]?.deaths ?? 0)) {
+          storeNotices((prev) => [...prev.filter((n) => n.heroId !== heroId), { id: `${heroId}:${deaths}`, at: Date.now(), heroId, deaths }].slice(-3));
+        }
+      }
+      storeThreats(next);
+    },
+    [storeNotices, storeThreats]
+  );
 
   /** Applies what the tracker concluded from a scan. */
   const applyMatchUpdate = useCallback(
@@ -851,6 +987,7 @@ export function App() {
         localStorage.setItem('dl_ownedItems', JSON.stringify(p.ownedItems));
       }
       if (p.soldItems !== undefined) storeSoldItems(p.soldItems);
+      if (update.threats) applyThreats(update.threats);
       setFormatIssue((prev) =>
         update.formatIssue
           ? prev && prev.width === update.formatIssue.width && prev.height === update.formatIssue.height
@@ -866,7 +1003,7 @@ export function App() {
         localStorage.setItem(BOARD_KEY, boardJson);
       }
     },
-    [clearOwnedItems, lockHero, storeSoldItems]
+    [clearOwnedItems, lockHero, storeSoldItems, applyThreats]
   );
 
 
@@ -979,6 +1116,19 @@ export function App() {
     document.documentElement.style.setProperty('zoom', String(factor));
     localStorage.setItem(UI_SCALE_KEY, uiScale);
   }, [uiScale, isDedicatedOverlayWindow]);
+
+  // --ui-zoom (tokens.css): the page zoom times the interface size, so small text never drops below its floor in
+  // screen pixels. A zoom change resizes the viewport: read again on `resize`.
+  useEffect(() => {
+    const apply = () => {
+      const cssZoom = Number(document.documentElement.style.getPropertyValue('zoom')) || 1;
+      const zoom = (window.electronAPI?.getZoomFactor?.() ?? 1) * cssZoom;
+      document.documentElement.style.setProperty('--ui-zoom', String(zoom));
+    };
+    apply();
+    window.addEventListener('resize', apply);
+    return () => window.removeEventListener('resize', apply);
+  }, [uiScale, overlayScale]);
 
   const performScreenScan = useCallback(async () => {
     if (isScanningRef.current) return;
@@ -1411,6 +1561,68 @@ export function App() {
     );
   };
 
+  /** Notices (an enemy keeps killing me), for NOTICE_TTL_MS: the overlay's cannot be clicked away in ghost mode. */
+  const renderNotices = (overlay: boolean) =>
+    notices
+      .filter((notice) => nowMs - notice.at < NOTICE_TTL_MS)
+      .map((notice) => (
+        <div
+          key={notice.id}
+          role="status"
+          className={`flex items-center gap-2 px-3 py-1.5 bg-bad-950/80 border-bad-500/50 text-body font-semibold text-bad-100 ${
+            overlay ? 'border-b' : 'border rounded-lg'
+          }`}
+        >
+          <TriangleAlert className="w-4 h-4 shrink-0 text-bad-300" aria-hidden />
+          <HeroPortraitIcon heroId={notice.heroId} color={HEROES.find((h) => h.id === notice.heroId)?.accentColor ?? ''} size={22} />
+          <span className="min-w-0 flex-1">{t('notice.killedBy', heroName(notice.heroId) ?? notice.heroId, notice.deaths)}</span>
+          {!overlay && (
+            <IconButton
+              label={t('notice.dismiss')}
+              icon={<X className="w-3.5 h-3.5" />}
+              onClick={() => storeNotices((prev) => prev.filter((n) => n.id !== notice.id))}
+            />
+          )}
+        </div>
+      ));
+
+  /** "Instead of X": the main-route item an alternative takes the place of. */
+  const renderReplaces = (alt: QueueEntry | RouteAlt) =>
+    'replaces' in alt && alt.replaces ? (
+      <span className="block text-small text-ink-muted truncate">{t('route.replaces', shortItemName(alt.replaces))}</span>
+    ) : null;
+
+  /** Overlay: one compact line for the route's later items (`rank`) and for the alternatives. */
+  const renderOverlayRow = (entry: QueueEntry | RouteAlt, rank?: string) => {
+    const high = 'priority' in entry && entry.priority === 'high';
+    const shortName = entry.item.name.split('(')[0].trim();
+    return (
+      <div
+        key={entry.item.id}
+        onClick={() => handleToggleOwnedItem(entry.item.id)}
+        title={[entry.reason, 'replaces' in entry && entry.replaces ? t('route.replaces', shortItemName(entry.replaces)) : '', whyText(entry)]
+          .filter(Boolean)
+          .join('\n')}
+        className={`px-2 py-1 rounded-lg border cursor-pointer flex items-center gap-2 ${
+          high ? 'bg-bad-950/50 border-bad-500/60' : rank ? 'bg-surface-panel border-transparent' : 'border-bone/15'
+        }`}
+      >
+        {rank && <span className="w-3 shrink-0 text-small text-ink-muted tabular-nums">{rank}</span>}
+        <ItemArtworkIcon itemId={entry.item.id} category={entry.item.category} size={28} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1 min-w-0">
+            <span className={`text-body font-semibold truncate ${high ? 'text-ink-strong' : 'text-ink'}`}>{shortName}</span>
+            {!rank && !isClickThrough && <CopyNameButton name={shortName} />}
+          </div>
+          {!rank && <span className={`block text-small truncate ${high ? 'text-bad-200' : 'text-ink-muted'}`}>{entry.reason}</span>}
+        </div>
+        <span className={`shrink-0 text-body tabular-nums ${high ? 'font-bold text-info-300' : 'text-ink-muted'}`}>
+          {formatNumber(entry.item.cost)}
+        </span>
+      </div>
+    );
+  };
+
   // ================= DEDICATED TRANSPARENT IN-GAME OVERLAY HUD WINDOW =================
   if (isDedicatedOverlayWindow) {
     return (
@@ -1418,7 +1630,7 @@ export function App() {
         <div className="h-screen w-screen p-2 flex flex-col select-none bg-transparent overflow-hidden">
           <div
             style={{ opacity: overlayOpacity }}
-            className="relative flex-1 flex flex-col rounded-2xl bg-surface-base/85 backdrop-blur-xl border border-accent-500/45 shadow-overlay overflow-hidden"
+            className="relative flex-1 flex flex-col rounded-xl bg-surface-base/90 backdrop-blur-xl border border-bone/15 shadow-overlay overflow-hidden"
           >
             {isOverlayArranging && !isClickThrough && (
               <div
@@ -1441,21 +1653,17 @@ export function App() {
                 <div className="w-3 h-3 border-r-2 border-b-2 border-accent-400 rounded-br" />
               </div>
             )}
-            <div className="drag-region px-3 py-2 bg-gradient-to-r from-accent-950/80 via-surface-panel to-surface-panel border-b border-bone/10 flex items-center justify-between">
+            <div className="drag-region px-3 py-2 bg-surface-header border-b border-bone/10 flex items-center justify-between">
               <div className="flex items-center gap-2 min-w-0">
                 <HeroPortraitIcon heroId={myHero.id} color={myHero.accentColor} size={28} />
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-display tracking-display text-body text-accent-300 truncate">
-                      {myHero.name}
-                    </span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-label text-body text-ink-strong truncate">{myHero.name}</span>
                     {currentSouls !== null && (
-                      <span className="text-small font-bold text-info-300 bg-info-950/70 px-1.5 py-0.2 rounded border border-info-500/40">
-                        {t('souls', formatNumber(currentSouls))}
-                      </span>
+                      <span className="text-body font-bold text-info-300 tabular-nums">{t('souls', formatNumber(currentSouls))}</span>
                     )}
                   </div>
-                  <span className="text-small text-ink-muted block leading-none">
+                  <span className="text-small text-ink-muted block">
                     VS{' '}
                     {laneOver
                       ? t('enemies.team', laneEnemyIds.length + teamEnemyIds.length)
@@ -1495,13 +1703,10 @@ export function App() {
               </div>
             </div>
 
-            <div className="no-drag px-3 py-1.5 bg-shade/50 border-b border-bone/10 space-y-1">
-              <span className="font-display text-small tracking-display text-accent-300">{t('now.title')}</span>
-              {renderNow(3, true)}
-            </div>
+            {renderNotices(true)}
 
             {isClickThrough && (
-              <div className="bg-bad-950/90 border-b border-bad-500/40 px-3 py-1 text-small text-center text-bad-200 font-semibold">
+              <div className="bg-surface-raised border-b border-bone/10 px-3 py-1 text-small text-center text-ink-soft font-semibold">
                 {t('overlay.ghostActive')} <kbd className="px-1 bg-shade/50 rounded">Alt+L</kbd> {t('overlay.ghostUnlock')}
               </div>
             )}
@@ -1537,14 +1742,19 @@ export function App() {
               </div>
             )}
 
-            <div className="no-drag px-2.5 py-2 bg-shade/50 border-b border-bone/10 flex items-center justify-between">
-              <span className="text-small font-bold uppercase text-spirit-300">{t('overlay.abilities')}</span>
+            <div className="no-drag px-3 py-2 border-b border-bone/10 space-y-1">
+              <span className={OVERLAY_LABEL}>{t('now.title')}</span>
+              {renderNow(3, true)}
+            </div>
+
+            <div className="no-drag px-3 py-1 border-b border-bone/10 flex items-center justify-between">
+              <span className={OVERLAY_LABEL}>{t('overlay.abilities')}</span>
               <div className="flex items-center gap-1">
                 {activeBuild.abilitiesOrder.map((key, idx) => {
                   const ab = activeBuild.abilitiesDetails.find((a) => a.key === key);
                   return (
                     <React.Fragment key={key}>
-                      <PowerIcon heroId={myHero.id} abilityKey={key} abilityName={ab?.name || key} size={32} />
+                      <PowerIcon heroId={myHero.id} abilityKey={key} abilityName={ab?.name || key} size={28} />
                       {idx < 3 && <span className="text-ink-faint text-body font-bold">›</span>}
                     </React.Fragment>
                   );
@@ -1552,13 +1762,16 @@ export function App() {
               </div>
             </div>
 
-            <div className="no-drag flex-1 overflow-y-auto p-2.5 space-y-2.5">
+            {/* Colour says priority, nothing else: amber the next purchase, red the high-priority tier, the rest neutral */}
+            <div className="no-drag flex-1 overflow-y-auto p-3 space-y-3">
               <div className="space-y-1.5">
-                <span className="font-display text-small tracking-display text-ink-strong flex items-center gap-1">
-                  <ShoppingCart className="w-3 h-3 text-accent-400" /> {t('overlay.buyNow')}
-                </span>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className={`${OVERLAY_LABEL} text-ink-strong`}>{t('route.main')}</span>
+                  <span className="text-small text-ink-muted tabular-nums">{t('route.progress', buildProgress.bought, buildProgress.total)}</span>
+                </div>
                 <InvestmentLine investment={investment} clockS={clockS} compact />
-                {nextToBuyQueue.slice(0, 3).map((entry, idx) => {
+                {nextToBuyQueue.length === 0 && <p className="text-small text-ink-muted">{t('route.done')}</p>}
+                {nextToBuyQueue.slice(0, 1).map((entry) => {
                   const canAfford = currentSouls !== null && currentSouls >= entry.item.cost;
                   const shortName = entry.item.name.split('(')[0].trim();
                   return (
@@ -1566,38 +1779,51 @@ export function App() {
                       key={entry.item.id}
                       onClick={() => handleToggleOwnedItem(entry.item.id)}
                       title={[entry.reason, whyText(entry)].filter(Boolean).join('\n')}
-                      className={`p-2 rounded-xl border cursor-pointer transition flex items-center justify-between gap-2 ${
-                        canAfford
-                          ? 'bg-accent-950/35 border-accent-400 shadow-raised'
-                          : 'bg-surface-panel border-bone/15 hover:border-accent-400/50'
-                      }`}
+                      className="p-2 rounded-lg border bg-accent-950/40 border-accent-400 cursor-pointer flex items-center gap-2.5"
                     >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="w-6 h-6 rounded-full bg-accent-500 text-on-accent font-extrabold text-small flex items-center justify-center shrink-0">
-                          #{idx + 1}
-                        </span>
-                        <ItemArtworkIcon itemId={entry.item.id} category={entry.item.category} size={46} />
-                        <div className="min-w-0 space-y-0.5">
-                          <div className="flex items-center gap-1 min-w-0">
-                            <span className="font-label text-title text-ink-strong truncate">{shortName}</span>
-                            {!isClickThrough && <CopyNameButton name={shortName} />}
-                          </div>
-                          <ShopTabMarker category={entry.item.category} />
-                          {renderSlotPlan(entry.item.id, true)}
-                          {renderImbueHint(entry.item.id, true)}
-                          {renderSpikeHint(entry.item.id, true)}
+                      <ItemArtworkIcon itemId={entry.item.id} category={entry.item.category} size={44} />
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="font-label text-title text-ink-strong truncate">{shortName}</span>
+                          {!isClickThrough && <CopyNameButton name={shortName} />}
                         </div>
+                        <ShopTabMarker category={entry.item.category} tier={entry.item.tier} />
+                        {renderSlotPlan(entry.item.id, true)}
+                        {renderImbueHint(entry.item.id, true)}
+                        {renderSpikeHint(entry.item.id, true)}
                       </div>
                       <div className="text-right shrink-0">
-                        <span className="text-title font-extrabold text-info-300 block">{formatNumber(entry.item.cost)}</span>
-                        {canAfford && (
-                          <Badge tone="good" solid className="uppercase">{t('overlay.buy')}</Badge>
+                        <span className="text-title font-bold text-info-300 tabular-nums block">{formatNumber(entry.item.cost)}</span>
+                        {currentSouls !== null && (
+                          <span className={`text-small font-semibold tabular-nums ${canAfford ? 'text-good-300' : 'text-accent-300'}`}>
+                            {canAfford ? t('overlay.buy') : t('buy.missing', formatNumber(entry.item.cost - currentSouls))}
+                          </span>
                         )}
                       </div>
                     </div>
                   );
                 })}
               </div>
+
+              {/* Right under the next purchase: in ghost mode the overlay cannot be scrolled */}
+              {routes.high.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className={`${OVERLAY_LABEL} text-bad-300`}>{t('route.high')}</span>
+                  {routes.high.map((alt) => renderOverlayRow(alt))}
+                </div>
+              )}
+              {nextToBuyQueue.length > 1 && (
+                <div className="space-y-1.5">
+                  {/* One line less when there are alternatives to show: they must fit without scrolling */}
+                  {nextToBuyQueue.slice(1, alternatives.length > 0 ? 2 : 3).map((entry, i) => renderOverlayRow(entry, String(i + 2)))}
+                </div>
+              )}
+              {routes.normal.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className={OVERLAY_LABEL}>{t('route.normal')}</span>
+                  {routes.normal.map((alt) => renderOverlayRow(alt))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1666,6 +1892,39 @@ export function App() {
             {t('buy.skip')}
           </Button>
         </div>
+      </div>
+    );
+  };
+
+  /** An alternative to the route: its reason in full, what it replaces, and the same actions as a route line. */
+  const renderAltRow = (alt: RouteAlt) => {
+    const { item } = alt;
+    const shortName = item.name.split('(')[0].trim();
+    const high = alt.priority === 'high';
+    return (
+      <div
+        key={item.id}
+        className={`p-2 rounded-xl border flex items-center gap-2.5 ${high ? 'bg-bad-950/40 border-bad-500/50' : 'border-bone/10'}`}
+      >
+        <ItemArtworkIcon itemId={item.id} category={item.category} size={40} />
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <div className="flex items-center gap-1 min-w-0">
+            <span className="font-label text-title text-ink-strong truncate">{shortName}</span>
+            <CopyNameButton name={shortName} />
+            <InfoTip text={whyTip(alt)} />
+          </div>
+          <span className={`block text-small ${high ? 'text-bad-200' : 'text-ink-soft'}`}>{alt.reason}</span>
+          {renderReplaces(alt)}
+          <div className="flex items-center gap-x-2 gap-y-0.5 flex-wrap">
+            <span className="text-small font-extrabold text-info-300 tabular-nums">{t('souls', formatNumber(item.cost))}</span>
+            <ShopTabMarker category={item.category} tier={item.tier} />
+          </div>
+          <div className="flex">{renderSlotPlan(item.id, true)}</div>
+        </div>
+        <div className="shrink-0">{affordBadge(item.cost)}</div>
+        <Button size="sm" variant="ghost" onClick={() => skipItem(item.id, shortName)}>
+          {t('buy.skip')}
+        </Button>
       </div>
     );
   };
@@ -2076,8 +2335,11 @@ export function App() {
                       <span className="p-1.5 rounded-xl bg-accent-500 text-on-accent">
                         <ShoppingCart className="w-4 h-4" />
                       </span>
-                      <h2 className="font-display text-title tracking-display text-ink-strong">{t('buy.title', inventoryLabel)}</h2>
-                      <InfoTip text={`${t('buy.help')}\n${activeBuild.name} — ${activeBuild.subtitle}`} />
+                      <h2 className="font-display text-title tracking-display text-ink-strong">{t('route.main')}</h2>
+                      <InfoTip text={`${t('route.help')}\n${t('buy.help')}\n${activeBuild.name} — ${activeBuild.subtitle}`} />
+                      <span className="text-small text-ink-muted tabular-nums">
+                        {t('route.progress', buildProgress.bought, buildProgress.total)} · {inventoryLabel}
+                      </span>
                       {inventoryStatus && inventoryStatus.unmatched > 0 && (
                         <span className="text-small text-accent-300 font-semibold">{t('buy.unmatched', inventoryStatus.unmatched)}</span>
                       )}
@@ -2085,7 +2347,9 @@ export function App() {
                     <InvestmentLine investment={investment} clockS={clockS} />
                   </div>
 
+                  {renderNotices(false)}
                   {/* The next purchase large, then #2–#4 (up to #6 on demand) */}
+                  {nextToBuyQueue.length === 0 && <p className="text-body text-ink-muted">{t('route.done')}</p>}
                   {nextToBuyQueue.slice(0, 1).map(renderBuyHero)}
                   {nextToBuyQueue.length > 1 && (
                     <div className="space-y-1.5">
@@ -2102,6 +2366,20 @@ export function App() {
                           {showFullQueue ? t('buy.less') : t('buy.more', Math.min(6, nextToBuyQueue.length) - 4)}
                         </Button>
                       )}
+                    </div>
+                  )}
+
+                  {/* Alternatives to the route: red for the high-priority tier, neutral for the others */}
+                  {routes.high.length > 0 && (
+                    <div className="space-y-1.5">
+                      <span className="block font-display text-small tracking-display text-bad-300">{t('route.high')}</span>
+                      {routes.high.map(renderAltRow)}
+                    </div>
+                  )}
+                  {routes.normal.length > 0 && (
+                    <div className="space-y-1.5">
+                      <span className="block font-display text-small tracking-display text-ink-muted">{t('route.normal')}</span>
+                      {routes.normal.map(renderAltRow)}
                     </div>
                   )}
                 </section>
@@ -2173,6 +2451,22 @@ export function App() {
                               </div>
                               {matchupStatText(open) && <p className="text-small text-ink-muted truncate">{matchupStatText(open)}</p>}
                             </div>
+                            <Button
+                              size="sm"
+                              pressed={(threats[open.enemyId]?.deaths ?? 0) >= NEMESIS_DEATHS}
+                              pressedVariant="danger"
+                              title={t('enemies.killedMeTitle')}
+                              onClick={() => applyThreats(trackerRef.current.markKilledBy(open.enemyId))}
+                            >
+                              {t('enemies.killedMe', threats[open.enemyId]?.deaths ?? 0)}
+                            </Button>
+                            {(threats[open.enemyId]?.deaths ?? 0) > 0 && (
+                              <IconButton
+                                label={t('enemies.killedMeUndo')}
+                                icon={<Undo2 className="w-3.5 h-3.5" />}
+                                onClick={() => applyThreats(trackerRef.current.markKilledBy(open.enemyId, -1))}
+                              />
+                            )}
                             <Button size="sm" pressed={open.isFed} pressedVariant="danger" onClick={() => toggleFed(open.enemyId)}>
                               {open.isFed ? t('matchups.fedUnmark') : `🔥 ${t('matchups.fedMark')}`}
                             </Button>
@@ -2496,6 +2790,10 @@ export function App() {
             updateStatus={updateStatus}
             uiScale={uiScale}
             onUiScaleChange={setUiScale}
+            altMax={altMax}
+            onAltMaxChange={changeAltMax}
+            altHighMax={altHighMax}
+            onAltHighMaxChange={changeAltHighMax}
             onReport={() => {
               setIsSettingsOpen(false);
               setIsReportOpen(true);

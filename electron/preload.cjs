@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   pickCaptureSource: () => ipcRenderer.invoke('pick-capture-source'),
@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setOverlayArranging: (enable) => ipcRenderer.invoke('set-overlay-arranging', enable),
   overlayResize: (phase, dx, dy) => ipcRenderer.send('overlay-resize', phase, dx, dy),
   setOverlayScale: (scale) => ipcRenderer.invoke('set-overlay-scale', scale),
+  // Page zoom of this window (Ctrl+-, overlay size): the text sizes keep a floor in screen pixels (tokens.css)
+  getZoomFactor: () => webFrame.getZoomFactor(),
   copyText: (text) => ipcRenderer.invoke('copy-text', text),
   decodeBuildCode: (code) => ipcRenderer.invoke('decode-build-code', code),
   windowControl: (action) => ipcRenderer.invoke('window-control', action),

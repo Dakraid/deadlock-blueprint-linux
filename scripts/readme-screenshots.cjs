@@ -63,6 +63,9 @@ function stagedState(lang) {
     dl_inventoryStatus: JSON.stringify({ itemIds: OWNED, occupied: OWNED.length, locked: 2, unmatched: 0 }),
     dl_currentSouls: '2857',
     dl_board: JSON.stringify(board),
+    // Haze killed the player three times ("Killed me"): the high-priority tier and its notice
+    dl_threats: JSON.stringify({ haze: { deaths: 3, items: [] } }),
+    dl_notices: JSON.stringify([{ id: 'haze:3', at: Date.now(), heroId: 'haze', deaths: 3 }]),
   };
 }
 

@@ -321,6 +321,62 @@ describe('inventory', () => {
  * match" late in the game, the killer's items added during the death cam, the whole inventory dropped by the
  * shop's fade-out.
  */
+describe('who killed me (death cam)', () => {
+  // The killer's HUD: their portrait highlighted, their inventory in the slots
+  const deathCam = (killer: string, items: string[]) =>
+    hud(items, { highlightedHeroId: killer, allySlots: ENEMIES, enemySlots: ALLIES });
+  const mine = ['extended_magazine', 'healbane'];
+  const start = snapshot({ ownedItems: mine });
+  const hazeItems = ['metal_skin', 'toxic_bullets', 'extended_magazine'];
+
+  it('counts one death per death cam, and reads the killer items seen on 2 frames', () => {
+    const frames = [
+      ...times(10, hud(mine)),
+      ...times(4, deathCam('haze', hazeItems)),
+      ...times(2, hud(mine, { highlightedHeroId: undefined })), // frames without highlight in between
+      ...times(4, deathCam('haze', hazeItems)),
+      ...times(80, hud(mine)), // alive again for 28 s
+      ...times(4, deathCam('haze', hazeItems)),
+    ];
+    const { updates, state } = run(frames, start);
+    const threats = updates.map((u) => u.threats).filter(Boolean).pop()!;
+    expect(threats.haze.deaths).toBe(2);
+    expect(threats.haze.items).toEqual(['extended_magazine', 'metal_skin', 'toxic_bullets']);
+    expect(state.ownedItems).toEqual(mine); // the killer's items never become mine
+  });
+
+  it('a spectated teammate or a single misread frame is not a killer', () => {
+    const frames = [
+      ...times(10, hud(mine)),
+      ...times(6, hud(hazeItems, { highlightedHeroId: 'vindicta' })), // an ally
+      ...times(6, hud(hazeItems, { highlightedHeroId: 'haze' })), // my portrait misread: my team still on the left
+      ...times(3, hud(mine)),
+      deathCam('haze', hazeItems), // one frame only
+      ...times(3, hud(mine)),
+    ];
+    expect(run(frames, start).updates.some((u) => u.threats)).toBe(false);
+  });
+
+  it('is forgotten with the owned items (new match)', () => {
+    const { tracker, updates } = run([...times(10, hud(mine)), ...times(4, deathCam('haze', hazeItems))], start);
+    expect(updates.some((u) => u.threats?.haze)).toBe(true);
+    tracker.resetOwned();
+    const next = run([...times(4, deathCam('haze', hazeItems))], start, tracker, 1_010_000);
+    expect(next.updates.map((u) => u.threats).filter(Boolean).pop()!.haze.deaths).toBe(1);
+  });
+
+  it('a death marked by hand counts like one read on the death cam', () => {
+    const tracker = new MatchTracker();
+    expect(tracker.markKilledBy('haze').haze.deaths).toBe(1);
+    expect(tracker.markKilledBy('haze').haze.deaths).toBe(2);
+    expect(tracker.markKilledBy('haze', -1).haze.deaths).toBe(1);
+    // Restart in the middle of a match: the saved threats are counted on
+    const restarted = new MatchTracker();
+    restarted.restoreThreats({ haze: { deaths: 3, items: ['metal_skin'] } });
+    expect(restarted.markKilledBy('haze').haze).toEqual({ deaths: 4, items: ['metal_skin'] });
+  });
+});
+
 describe('recorded games', () => {
   const games = [
     { file: 'amber_infernus_part1', finalOwned: 11 },
